@@ -1,312 +1,184 @@
-# Docking Studio
+# 🧬 Docking Studio
 
-Docking Studio is a professional desktop molecular docking platform built with:
+**Professional molecular docking in your browser.** No installation, no Python, no PyQt6 — just open and dock.
 
-* PyQt6 scientific desktop UI
-* Dockerized backend (FastAPI)
-* AutoDock Vina + GNINA integration
-* Optional Ollama AI assistant (auto-detected)
-* Agent Zero orchestration engine
-* Security monitoring layer
-* Multi-user workspace
-* Plugin architecture
+Built with AutoDock Vina + GNINA deep learning for accurate binding affinity prediction.
 
 ---
 
-# 🚀 Features
+## ⚡ Quick Start
 
-* Real-time docking progress streaming
-* Multi-pose 3D visualization
-* 2D interaction diagram panel
-* Pose clustering (RMSD-based)
-* Binding pocket heatmap
-* GNINA CNN heatmap overlay
-* MM-GBSA energy estimation panel
-* AI-assisted docking interpretation (optional)
-* GPU utilization monitor
-* Security status monitoring
-* Scientific report export (PDF)
-* Plugin extension system
-
----
-
-# 🧱 System Architecture
-
-```
-PyQt6 Desktop
-      ↓
-Docker Backend (FastAPI)
-      ↓
-Docking Engine (Vina + GNINA)
-      ↓
-SQLite Job Storage
+### Windows
+```bat
+1. Install Docker Desktop → https://www.docker.com/products/docker-desktop
+2. Open start.bat
+3. Open browser → http://localhost:8000
 ```
 
-Optional:
-
-```
-Ollama (auto-detected)
-```
-
-Docking Studio works fully without AI.
-
----
-
-# 📦 System Requirements
-
-## Minimum
-
-* 8 GB RAM
-* 4 CPU cores
-* Docker Desktop installed
-* Python 3.10+
-
-## Recommended
-
-* 16–32 GB RAM
-* NVIDIA GPU (for GNINA CNN acceleration)
-* 8+ CPU cores
-
----
-
-# 🐳 Installation (Backend)
-
-### 1️⃣ Install Docker
-
-Download and install Docker Desktop:
-[https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
-
-Verify:
-
-```
-docker --version
-docker compose version
+### Mac / Linux
+```bash
+1. Install Docker Desktop → https://www.docker.com/products/docker-desktop
+2. Run: chmod +x start.sh && ./start.sh
+3. Open browser → http://localhost:8000
 ```
 
 ---
 
-### 2️⃣ Clone Repository
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| **3D Viewer** | Visualize protein-ligand complexes with 3Dmol.js |
+| **Vina Docking** | Physics-based AutoDock Vina scoring |
+| **GNINA CNN** | Deep learning CNN scoring for better accuracy |
+| **RF-Score** | Random Forest consensus scoring |
+| **Tri-Score Protocol** | Combines Vina + GNINA + RF-Score |
+| **Pose Analysis** | RMSD, binding interactions, pharmacophores |
+| **AI Assistant** | Optional Ollama-powered chat (auto-detected) |
+| **Security Scanner** | Trivy, Bandit, Safety dependency checks |
+
+---
+
+## 🖥️ System Requirements
+
+| | Minimum | Recommended |
+|--|---------|-------------|
+| RAM | 4 GB | 8+ GB |
+| CPU | 2 cores | 4+ cores |
+| GPU | Optional | NVIDIA GPU (for GNINA) |
+| Storage | 5 GB | 10 GB |
+| OS | Windows 10+, macOS 11+, Ubuntu 20.04+ | |
+
+> **Docker Desktop is required.** Download free at [docker.com](https://www.docker.com/products/docker-desktop)
+
+---
+
+## 🚀 How It Works
 
 ```
-git clone https://github.com/tajo9128/Docking-studio.git
-cd Docking-studio
+┌─────────────────────────────────────────────────────────────┐
+│  Your Browser (http://localhost:8000)                       │
+│                                                             │
+│  React SPA ── SSE/Rest ──→ FastAPI Backend (Docker)        │
+│                                ↓                             │
+│                          Vina + GNINA + RDKit               │
+│                                ↓                             │
+│                          SQLite Job Storage                 │
+└─────────────────────────────────────────────────────────────┘
+
+Optional: Ollama (port 11434) ── AI Chat Assistant
+```
+
+**Ollama is optional.** The docking studio works 100% offline without it.
+
+---
+
+## 📁 Project Structure
+
+```
+Docking-studio/
+├── backend/            # FastAPI backend (runs in Docker)
+│   ├── main.py         # API endpoints
+│   ├── analysis.py     # RMSD, interactions, binding sites
+│   ├── db.py           # SQLite job storage
+│   └── ai/             # Ollama integration
+├── frontend/           # React TypeScript SPA source
+├── docker-compose.yml  # Container orchestration
+├── Dockerfile          # Multi-stage build (Node + Python)
+├── start.sh            # Easy start script (Mac/Linux)
+├── start.bat           # Easy start script (Windows)
+└── QUICKSTART.md       # Detailed student guide
 ```
 
 ---
 
-### 3️⃣ Configure Environment
+## 🛠️ Common Commands
 
-Copy example environment:
+```bash
+# Start (from project directory)
+./start.sh          # Mac/Linux
+start.bat           # Windows
 
-```
-cp .env.example .env
-```
+# Stop
+docker compose down
 
-Edit `.env` if needed:
+# View logs
+docker compose logs -f backend
 
-```
-AI_MODE=auto
-ALLOW_AI=true
-OLLAMA_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=llama3
-```
+# Restart fresh
+docker compose down -v
+./start.sh
 
----
-
-### 4️⃣ Start Backend
-
-```
+# Update to latest version
+git pull origin main
 docker compose up -d --build
 ```
 
-Verify backend:
+---
 
+## 🔧 Troubleshooting
+
+### "Docker is not running"
+Start Docker Desktop and wait for the whale icon to say "running".
+
+### "Port 8000 is already in use"
+```bash
+docker compose down
+# or
+docker stop $(docker ps -q --filter "publish=8000")
 ```
-http://localhost:8000/docs
+
+### "Backend won't start"
+```bash
+docker compose logs backend
 ```
+If it mentions memory, lower limits in `docker-compose.yml`.
+
+### First build is slow
+Normal. Docker downloads Vina, GNINA, RDKit (~3-5 GB). Subsequent builds use cache.
 
 ---
 
-# 🖥 Frontend Installation (PyQt6)
+## 📚 Documentation
 
-### Install Python Dependencies
-
-```
-pip install -r requirements.txt
-```
-
-### Run Desktop Application
-
-```
-python -m src.biodockify_main
-```
+- [QUICKSTART.md](QUICKSTART.md) — Step-by-step for students
+- [SECURITY.md](SECURITY.md) — Security scanning guide
+- [docs/troubleshooting.md](docs/troubleshooting.md) — Common issues
 
 ---
 
-# 🧠 Optional: Enable Ollama AI
+## 🔬 Scientific Features
 
-Install Ollama:
+**Tri-Score Protocol:**
+- **Vina Score** — Physics-based grid scoring
+- **GNINA CNN** — Convolutional neural network (3D binding pose)
+- **RF-Score** — Machine learning protein-ligand scoring
 
-[https://ollama.com](https://ollama.com)
-
-Start Ollama normally.
-
-Docking Studio will automatically detect it.
-
-No manual configuration required.
-
-If Ollama is not running → software works in offline deterministic mode.
-
----
-
-# 🔐 Security Monitoring
-
-Docking Studio includes:
-
-* Trivy container scanning
-* Bandit Python static analysis
-* Safety dependency scanning
-* Gitleaks secret detection
-
-Check status:
-
-```
-http://localhost:8000/security/status
-```
+**Analysis Tools:**
+- H-bond, hydrophobic, π-π stacking, salt bridge detection
+- RMSD calculation for pose comparison
+- Binding site residue identification
+- Interaction diagram generation
 
 ---
 
-# 📊 Running a Docking Job
+## 🤖 Optional: Enable AI
 
-1. Load receptor (PDB / PDBQT)
-2. Load ligand (SDF / PDBQT / SMILES)
-3. Define grid or auto-detect from bound ligand
-4. Click **Run Docking**
-5. Monitor progress in real time
-6. Analyze poses in viewer
-7. Export report
-
----
-
-# 📄 Exporting Scientific Report
-
-Report includes:
-
-* Docking scores
-* GNINA CNN score
-* MM-GBSA estimation
-* Interaction table
-* Heatmap visualization
-* Pose image snapshot
-* Security status
-* AI interpretation (if enabled)
-
----
-
-# 🔌 Plugin System
-
-Add new plugins in:
-
-```
-plugins/
-```
-
-Each plugin must implement:
-
-```
-class DockingPlugin:
-    name = "Plugin Name"
-    def run(self, job_data):
-        pass
-```
-
-Plugins load automatically at startup.
-
----
-
-# 👥 Multi-User Workspace
-
-Each user can:
-
-* Create projects
-* Store docking jobs
-* Reopen previous results
-* Maintain independent datasets
-
-SQLite database persists between sessions.
-
----
-
-# 🛠 Development Mode
-
-Rebuild backend clean:
-
-```
-docker compose down -v
-docker compose build --no-cache
-docker compose up -d
-```
-
----
-
-# 📜 License
-
-This project is licensed under the Apache License 2.0.
-
-See LICENSE file for details.
-
----
-
-# ⚠ Disclaimer
-
-This software is provided for research and educational purposes.
-No warranty is provided.
-Not intended for clinical or medical decision making.
-
----
-
-# 📧 Security Reporting
-
-Report vulnerabilities privately through GitHub Security Advisories.
-
----
-
-# 📌 Version
-
-Current version: v1.2.3 (see `VERSION` file)
-
----
-
-# 🏁 Quick Start
+Install [Ollama](https://ollama.com) for AI-powered docking interpretation.
 
 ```bash
-# Clone and start
-git clone https://github.com/tajo9128/Docking-studio.git
-cd Docking-studio
-docker compose up -d
-
-# Run frontend
-pip install -r requirements.txt
-python -m src.biodockify_main
+# Install Ollama, then:
+ollama pull llama3
 ```
 
----
-
-# 📚 Documentation
-
-- [Installation Guide](docs/installation.md)
-- [User Guide](docs/user_guide.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [FAQ](docs/faq.md)
+Docking Studio auto-detects Ollama. Works fully offline without it.
 
 ---
 
-# 🙏 Acknowledgments
+## ⚠️ Disclaimer
 
-* AutoDock Vina
-* GNINA
-* RDKit
-* ODDT
-* PyQt6
-* FastAPI
-* Ollama
+For research and educational purposes only. Not validated for clinical or medical decision-making.
+
+---
+
+**Version:** v1.3.4 | Apache License 2.0

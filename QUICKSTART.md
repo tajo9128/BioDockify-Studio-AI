@@ -1,86 +1,117 @@
-# 🚀 Quick Start Guide for Students
+# 🚀 Quick Start Guide (3 Steps)
 
-## Step 1: Start Docker Desktop
+## Step 1: Install Docker
 
-1. Open **Docker Desktop** on your computer
-2. Wait for it to say "Docker is running"
+**Download:** [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
 
-## Step 2: Run the Backend
+| OS | Installation |
+|----|-------------|
+| Windows | Run installer → Restart computer → Start Docker Desktop |
+| Mac | Run installer → Move to Applications → Start Docker Desktop |
+| Linux | `sudo apt install docker.io docker-compose` |
 
-Open terminal/command prompt and run:
-
+**Verify Docker is running:**
 ```bash
-docker run -d -p 8000:8000 tajo9128/docking-studio:latest
+docker --version
+docker compose version
 ```
+
+> If commands fail → Docker Desktop is not running. Open it from your applications.
+
+---
+
+## Step 2: Start Docking Studio
+
+Open terminal in this project folder and run:
+
+**Windows:**
+```bat
+start.bat
+```
+
+**Mac / Linux:**
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+> **First time only:** Docker downloads Vina, GNINA, RDKit (~3-5 GB). Takes 5-10 minutes.
+> **After first run:** Starts in ~10 seconds.
+
+The script will:
+- ✅ Check Docker is running
+- ✅ Stop any existing containers
+- ✅ Build the application
+- ✅ Start all services
+- ✅ Wait for backend to be ready
+- ✅ Open browser automatically
+
+---
 
 ## Step 3: Open in Browser
 
-After starting the container, open your browser and go to:
+After the script says **"Docking Studio is ready!"**, go to:
 
-### 📚 API Documentation (Recommended for learning)
-➡️ **http://localhost:8000/docs**
+### 🌐 http://localhost:8000
 
-This is the **Swagger UI** where you can:
-- See all available API endpoints
-- Test docking operations
-- View request/response formats
-
-### 🔧 Alternative: ReDoc
-➡️ **http://localhost:8000/redoc**
-
-### ✅ Health Check
-➡️ **http://localhost:8000/health**
+This is your molecular docking workspace.
 
 ---
 
-## Step 4: Run the Desktop App (Optional)
+## Quick Reference
 
-For the full PyQt6 desktop interface:
-
-```bash
-# Clone the repository
-git clone https://github.com/tajo9128/Docking-studio.git
-cd Docking-studio
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the app
-python -m src.biodockify_main
-```
-
-The desktop app will connect to `http://localhost:8000` automatically.
+| What you want | How to do it |
+|--------------|-------------|
+| Start | `start.bat` or `./start.sh` |
+| Stop | `docker compose down` |
+| View logs | `docker compose logs -f backend` |
+| Restart fresh | `docker compose down -v && ./start.sh` |
+| Update | `git pull && docker compose up -d --build` |
 
 ---
 
-## 🎯 Quick Reference
+## Port Reference
 
-| Service | URL |
-|---------|-----|
-| Swagger API Docs | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-| Health Status | http://localhost:8000/health |
-| Security Status | http://localhost:8000/security/status |
+| Port | Service | URL |
+|------|---------|-----|
+| 8000 | **Docking Studio (Web UI)** | http://localhost:8000 |
+| 8000 | API Documentation | http://localhost:8000/docs |
+| 11434 | Ollama AI (optional) | http://localhost:11434 |
 
 ---
 
-## ❓ Troubleshooting
+## Troubleshooting
 
-**Port already in use?**
-```bash
-docker stop $(docker ps -q)
-docker run -d -p 8000:8000 tajo9128/docking-studio:latest
-```
+### "Docker is not running"
+→ Open Docker Desktop from your applications. Wait 30 seconds.
 
-**Check if running:**
+### "Port 8000 already in use"
 ```bash
-docker ps
+docker compose down
 ```
+Then try starting again.
 
-**View logs:**
+### "Backend won't start"
 ```bash
-docker logs $(docker ps -q --last-format)
+docker compose logs backend --tail=50
 ```
+Look for error messages. Common fix: lower memory limits in `docker-compose.yml`.
+
+### "Browser shows connection error"
+Wait 30 more seconds. Backend may still be starting up.
+
+---
+
+## What's Next?
+
+Once running, explore:
+
+1. **Dashboard** — System overview
+2. **New Docking** — Upload receptor + ligand, configure grid, run docking
+3. **Job Queue** — Monitor running/completed jobs
+4. **Results** — View binding scores, interactions, poses
+5. **3D Viewer** — Rotate/zoom molecular structures
+6. **AI Assistant** — Ask questions about your docking results
 
 ---
 

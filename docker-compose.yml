@@ -1,56 +1,51 @@
 version: '3.8'
 
 services:
+  # =========================================================
+  # Ollama - Optional AI Assistant
+  # Works fully without this. Uncomment if you want AI features.
+  # =========================================================
   ollama:
     image: ollama/ollama:latest
     container_name: docking-ollama
     hostname: ollama
     restart: unless-stopped
-    
     ports:
       - "11434:11434"
-    
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_MODELS=/models
-    
     volumes:
       - ollama-models:/models
-    
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    
+    # Uncomment below to enable GPU (requires NVIDIA GPU + nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     networks:
       - docking-network
 
+  # =========================================================
+  # Docking Studio Backend - Main Application
+  # =========================================================
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+      pull: always  # Always pull latest base images, rebuild frontend
     image: biodockify/docking-studio:latest
     container_name: docking-backend
     hostname: backend
     restart: unless-stopped
-    
     ports:
       - "8000:8000"
-    
     volumes:
       - ./data:/data
       - ./uploads:/uploads
       - ./backend/storage:/app/storage
-    
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
@@ -58,33 +53,26 @@ services:
       - OLLAMA_MODEL=llama3
       - OLLAMA_URL=http://ollama:11434
       - ALLOW_AI=true
-    
-    depends_on:
-      ollama:
-        condition: service_healthy
-    
+    # Ollama is optional - no depends_on so backend starts even if Ollama is absent
     deploy:
       resources:
         limits:
           cpus: '4.0'
-          memory: 8G
-        reservations:
-          cpus: '2.0'
           memory: 4G
-    
+        reservations:
+          cpus: '1.0'
+          memory: 2G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 10s
-    
+      retries: 5
+      start_period: 20s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    
     networks:
       - docking-network
 
