@@ -100,7 +100,12 @@ class OfflineAssistant:
             return best_match
         
         return (
-            "I'm running in offline mode. I can help with:\n"
+            "I'm running in offline mode (Ollama not configured or no models installed).\n\n"
+            "To enable AI features, install an Ollama model:\n"
+            "1. Install Ollama: https://ollama.ai\n"
+            "2. Run: ollama pull llama3\n"
+            "3. Restart this application\n\n"
+            "I can still help with:\n"
             "• Vina scoring and binding affinity\n"
             "• GNINA CNN deep learning scores\n"
             "• Random Forest scoring\n"

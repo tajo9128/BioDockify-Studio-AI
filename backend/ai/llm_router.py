@@ -27,10 +27,22 @@ class OllamaProvider:
         self.model = model
     
     def is_available(self) -> bool:
-        """Check if Ollama is running"""
+        """Check if Ollama is running and has models"""
         try:
             response = requests.get(f"{self.url}/api/tags", timeout=OLLAMA_TIMEOUT)
-            return response.status_code == 200
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("models", [])
+                # Check if the configured model is available
+                if models and any(self.model in m.get("name", "") for m in models):
+                    return True
+                # If no specific model, check if any models exist
+                if models:
+                    logger.info(f"Ollama has {len(models)} model(s)")
+                    return True
+                logger.warning("Ollama running but no models installed")
+                return False
+            return False
         except Exception:
             return False
     
