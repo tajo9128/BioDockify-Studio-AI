@@ -4,6 +4,10 @@ AI-powered planner that orchestrates drug discovery pipelines
 
 BRAIN = PLANNER ONLY, NOT EXECUTOR
 Brain -> API -> Redis Queue -> Worker -> Services
+
+Plugin System:
+- tools/          -> Core chemistry tools (docking, rdkit, pharmacophore)
+- integrations/    -> External DB integrations (PubChem, PDB)
 """
 
 import os
@@ -19,6 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 
+from tools import ToolRegistry, register_all_tools
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -31,6 +37,8 @@ STORAGE_DIR = Path("/app/storage")
 UPLOADS_DIR = Path("/app/uploads")
 STORAGE_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
+
+registry: Optional[ToolRegistry] = None
 
 app = FastAPI(
     title="Nanobot Brain Service",
@@ -45,6 +53,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    global registry
+    logger.info("Initializing Nanobot Brain tool registry...")
+    registry = register_all_tools()
+    logger.info(f"Registered {len(registry.list_tools())} tools")
+    logger.info("Tool categories: " + ", ".join(set(t.category for t in registry._tools.values())))
 
 
 class ChatMessage(BaseModel):
@@ -207,18 +224,32 @@ async def health_check():
 
 @app.get("/")
 async def root():
+    tool_count = len(registry.list_tools()) if registry else 0
+    categories = list(set(t.category for t in registry._tools.values())) if registry else []
     return {
         "service": "Nanobot Brain Service",
         "version": "2.0.0",
         "role": "AI Planner for Drug Discovery",
         "ollama_url": OLLAMA_URL,
-        "ollama_model": OLLAMA_MODEL
+        "ollama_model": OLLAMA_MODEL,
+        "tools_registered": tool_count,
+        "categories": categories
     }
 
 
 @app.get("/tools")
 async def list_tools():
-    return {"tools": [t.model_dump() for t in TOOLS]}
+    if registry:
+        return {"tools": registry.list_tools()}
+    return {"tools": []}
+
+
+@app.get("/tools/{category}")
+async def list_tools_by_category(category: str):
+    if registry:
+        tools = registry.list_by_category(category)
+        return {"category": category, "tools": [t.to_definition() for t in tools]}
+    return {"category": category, "tools": []}
 
 
 @app.post("/chat", response_model=ChatResponse)

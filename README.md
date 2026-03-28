@@ -1,27 +1,111 @@
-# 🧬 Docking Studio
+# 🧬 Docking Studio v2.0
 
-**A web application — runs in your browser at `http://localhost:8000`.**
+**Local-first AI Drug Discovery Studio** — runs in your browser at `http://localhost:3000`.
 
-No desktop app. No installation needed. Just open Docker, run the start script, and dock in your browser.
-
-Built with AutoDock Vina + GNINA deep learning for accurate binding affinity prediction.
+Built with microservices architecture + Nanobot Brain AI agent. One-command startup via Docker Desktop.
 
 ---
 
 ## ⚡ Quick Start
 
-### Windows
-```bat
-1. Install Docker Desktop → https://www.docker.com/products/docker-desktop
-2. Open start.bat
-3. Open browser → http://localhost:8000
+```bash
+# 1. Install Docker Desktop → https://www.docker.com/products/docker-desktop
+# 2. Clone and start
+git clone https://github.com/tajo9128/Docking-studio
+cd Docking-studio
+docker compose up
+
+# 3. Open browser → http://localhost:3000
 ```
 
-### Mac / Linux
-```bash
-1. Install Docker Desktop → https://www.docker.com/products/docker-desktop
-2. Run: chmod +x start.sh && ./start.sh
-3. Open browser → http://localhost:8000
+---
+
+## 🧠 What is Nanobot Brain?
+
+Nanobot is your AI drug discovery assistant. Unlike traditional software, Nanobot:
+
+- **Understands natural language** — "Find best inhibitor for protein X"
+- **Plans workflows** — Creates execution plans using available tools
+- **Orchestrates pipelines** — Pharmacophore → Screen → Dock → Rank automatically
+- **Learns from results** — Improves recommendations based on screening data
+
+---
+
+## 🧩 Plugin System (Skills/Tools)
+
+Nanobot Brain has pluggable tools organized by category:
+
+### 🧪 Cheminformatics
+| Tool | Description |
+|------|-------------|
+| `smiles_to_3d` | Convert SMILES to 3D structure (RDKit) |
+| `convert_format` | Convert between PDB, SDF, mol, pdbqt |
+| `optimize_molecule` | MMFF force field optimization |
+
+### 🔬 Docking
+| Tool | Description |
+|------|-------------|
+| `dock_ligand` | AutoDock Vina molecular docking |
+| `run_batch_docking` | Batch docking for compound libraries |
+
+### 🎯 Pharmacophore
+| Tool | Description |
+|------|-------------|
+| `generate_pharmacophore` | RDKit-based pharmacophore from receptor/ligand |
+| `screen_library` | Virtual screening against pharmacophore model |
+
+### 🌐 Integrations
+| Tool | Description |
+|------|-------------|
+| `fetch_protein` | Fetch from PDB (e.g., "1ABC") |
+| `fetch_compounds` | Fetch from PubChem by CID |
+| `search_compounds` | Search PubChem by name/formula |
+| `similarity_search` | Tanimoto similarity search |
+
+### 📊 Analysis
+| Tool | Description |
+|------|-------------|
+| `analyze_interactions` | H-bonds, hydrophobic, π-π stacking |
+| `predict_binding` | ML-based binding affinity prediction |
+| `compare_ligands` | Rank ligands by docking score |
+
+---
+
+## 🏗️ Architecture
+
+```
+Docker Desktop
+│
+├── gateway (nginx:3000)    → React UI + routing
+├── api-backend (8000)      → Main API gateway
+├── brain-service (8001)     → Nanobot AI planner
+├── docking-service (8002)  → AutoDock Vina
+├── rdkit-service (8003)    → Molecule processing
+├── pharmacophore-service (8004) → Pharmacophore modeling
+├── redis-worker            → Celery job processor
+├── redis (6379)            → Job queue broker
+├── postgres (5432)         → Metadata storage
+└── ollama (11434)          → AI (optional)
+```
+
+**Brain = Planner Only** — Brain doesn't run docking directly. It creates plans and queues jobs via the API.
+
+---
+
+## 🚀 Autonomous Pipelines
+
+Nanobot can run full drug discovery workflows:
+
+```python
+# Example: Virtual screening pipeline
+1. fetch_protein("1ABC")           # Get target from PDB
+2. generate_pharmacophore()         # Find key interaction features  
+3. search_compounds("aspirin")     # Find candidate ligands
+4. smiles_to_3d()                  # Convert to 3D
+5. screen_library()                 # Filter by pharmacophore
+6. dock_ligand()                   # Dock top candidates
+7. analyze_interactions()           # Understand binding
+8. rank_results()                  # Sort by score
 ```
 
 ---
@@ -30,14 +114,13 @@ Built with AutoDock Vina + GNINA deep learning for accurate binding affinity pre
 
 | Feature | Description |
 |---------|-------------|
-| **3D Viewer** | Visualize protein-ligand complexes with 3Dmol.js |
-| **Vina Docking** | Physics-based AutoDock Vina scoring |
-| **GNINA CNN** | Deep learning CNN scoring for better accuracy |
-| **RF-Score** | Random Forest consensus scoring |
-| **Tri-Score Protocol** | Combines Vina + GNINA + RF-Score |
-| **Pose Analysis** | RMSD, binding interactions, pharmacophores |
-| **AI Assistant** | Optional Ollama-powered chat (auto-detected) |
-| **Security Scanner** | Trivy, Bandit, Safety dependency checks |
+| **3D Viewer** | NGL Viewer for protein-ligand complexes |
+| **Vina Docking** | Physics-based AutoDock Vina |
+| **GNINA CNN** | Deep learning scoring (optional GPU) |
+| **Pharmacophore** | RDKit-based model generation & screening |
+| **Nanobot AI** | Natural language drug discovery assistant |
+| **Batch Processing** | Redis queue for large libraries |
+| **Persistent Storage** | PostgreSQL + volumes |
 
 ---
 
@@ -47,141 +130,70 @@ Built with AutoDock Vina + GNINA deep learning for accurate binding affinity pre
 |--|---------|-------------|
 | RAM | 4 GB | 8+ GB |
 | CPU | 2 cores | 4+ cores |
-| GPU | Optional | NVIDIA GPU (for GNINA) |
-| Storage | 5 GB | 10 GB |
-| OS | Windows 10+, macOS 11+, Ubuntu 20.04+ | |
-
-**Docker Desktop is required.** Get it free at [docker.com](https://www.docker.com/products/docker-desktop)
-
----
-
-## 🚀 How It Works
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Your Browser (http://localhost:8000)                       │
-│                                                             │
-│  React SPA ── SSE/Rest ──→ FastAPI Backend (Docker)        │
-│                                ↓                             │
-│                          Vina + GNINA + RDKit               │
-│                                ↓                             │
-│                          SQLite Job Storage                 │
-└─────────────────────────────────────────────────────────────┘
-
-Optional: Ollama (port 11434) ── AI Chat Assistant
-```
-
-**Ollama is optional.** The docking studio works 100% offline without it.
-
----
-
-## 📁 Project Structure
-
-```
-Docking-studio/
-├── backend/            # FastAPI API (runs in Docker container)
-│   ├── main.py         # API endpoints
-│   ├── analysis.py     # RMSD, interactions, binding sites
-│   └── db.py           # SQLite job storage
-├── frontend/           # React SPA source (TypeScript)
-├── docker-compose.yml  # Container orchestration
-├── Dockerfile          # Multi-stage build (Node builds frontend, Python serves it)
-├── start.sh            # Easy start script (Mac/Linux)
-├── start.bat           # Easy start script (Windows)
-└── QUICKSTART.md       # Step-by-step guide for students
-```
-
-**No desktop app.** Everything runs in the browser at `http://localhost:8000`.
+| GPU | Optional | NVIDIA GPU |
+| Storage | 10 GB | 20 GB |
 
 ---
 
 ## 🛠️ Common Commands
 
 ```bash
-# Start (from project directory)
-./start.sh          # Mac/Linux
-start.bat           # Windows
+# Start
+docker compose up
+
+# Start with GPU (NVIDIA)
+docker compose up -d
 
 # Stop
 docker compose down
 
 # View logs
-docker compose logs -f backend
+docker compose logs -f
 
-# Restart fresh
-docker compose down -v
-./start.sh
-
-# Update to latest version
-git pull origin main
+# Rebuild
 docker compose up -d --build
+
+# Clean start
+docker compose down -v
+docker compose up
 ```
 
 ---
 
-## 🔧 Troubleshooting
+## 🤖 Adding New Tools
 
-### "Docker is not running"
-Start Docker Desktop and wait for the whale icon to say "running".
+Extend Nanobot by adding Python tools:
 
-### "Port 8000 is already in use"
-```bash
-docker compose down
-# or
-docker stop $(docker ps -q --filter "publish=8000")
+```python
+# services/brain-service/tools/my_tool.py
+from tools import BaseTool, ToolInput, ToolOutput
+
+class MyTool(BaseTool):
+    name = "my_tool"
+    description = "Description of what it does"
+    category = "custom"
+    
+    async def execute(self, input_data: ToolInput) -> ToolOutput:
+        # Your logic here
+        return ToolOutput(success=True, data={...})
+
+# Register in tools/__init__.py
+registry.register(MyTool())
 ```
-
-### "Backend won't start"
-```bash
-docker compose logs backend
-```
-If it mentions memory, lower limits in `docker-compose.yml`.
-
-### First build is slow
-Normal. Docker downloads Vina, GNINA, RDKit (~3-5 GB). Subsequent builds use cache.
 
 ---
 
 ## 📚 Documentation
 
-- [QUICKSTART.md](QUICKSTART.md) — Step-by-step for students
-- [SECURITY.md](SECURITY.md) — Security scanning guide
-- [docs/troubleshooting.md](docs/troubleshooting.md) — Common issues
-
----
-
-## 🔬 Scientific Features
-
-**Tri-Score Protocol:**
-- **Vina Score** — Physics-based grid scoring
-- **GNINA CNN** — Convolutional neural network (3D binding pose)
-- **RF-Score** — Machine learning protein-ligand scoring
-
-**Analysis Tools:**
-- H-bond, hydrophobic, π-π stacking, salt bridge detection
-- RMSD calculation for pose comparison
-- Binding site residue identification
-- Interaction diagram generation
-
----
-
-## 🤖 Optional: Enable AI
-
-Install [Ollama](https://ollama.com) for AI-powered docking interpretation.
-
-```bash
-# Install Ollama, then:
-ollama pull llama3
-```
-
-Docking Studio auto-detects Ollama. Works fully offline without it.
+- [QUICKSTART.md](QUICKSTART.md) — Step-by-step guide
+- [docs/](docs/) — Additional documentation
 
 ---
 
 ## ⚠️ Disclaimer
 
-For research and educational purposes only. Not validated for clinical or medical decision-making.
+For research and educational purposes only. Not validated for clinical use.
 
 ---
 
-**Version:** v1.3.4 | Apache License 2.0
+**Version:** v2.0.0 | Apache License 2.0
