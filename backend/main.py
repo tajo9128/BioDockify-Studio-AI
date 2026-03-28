@@ -58,7 +58,22 @@ app.add_middleware(
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), "storage")
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+# Static files are in backend/static relative to the app root
+# When uvicorn runs from /app, __file__ is /app/main.py
+# But the actual static files are at /app/backend/static
+import sys
+if '/app' in sys.path or True:  # Always check for app prefix
+    _base = '/app'
+else:
+    _base = os.path.dirname(__file__)
+STATIC_DIR = os.path.join(_base, "backend", "static")
+ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
+
+logger.info(f"Static directory: {STATIC_DIR}")
+logger.info(f"Assets directory: {ASSETS_DIR}")
+
+# Mount static files - mount assets first so it takes priority
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 @app.get("/")
