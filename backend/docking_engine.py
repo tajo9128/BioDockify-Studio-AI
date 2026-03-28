@@ -129,7 +129,7 @@ def run_vina_docking(
         # Set receptor
         logger.info(f"Setting receptor from: {receptor_file}")
         try:
-            v.set_receptor(receptor_pdbqt_file=receptor_file)
+            v.set_receptor(rigid_pdbqt_filename=receptor_file)
         except Exception as e:
             logger.error(f"Failed to set receptor: {e}")
             return {
@@ -174,30 +174,28 @@ def run_vina_docking(
                 "results": []
             }
         
-        # Get energies
+        # Get energies and poses
         try:
-            energies = v.score()
-            logger.info(f"Docking completed. Best score: {energies[0] if energies else 'N/A'}")
+            energies = v.energies
+            logger.info(f"Docking completed. Best score: {energies[0][0] if energies else 'N/A'}")
         except Exception as e:
             logger.warning(f"Could not get energies: {e}")
             energies = []
         
         # Build results from poses
         results = []
-        for i in range(num_modes):
-            try:
-                pose = v.get_pose(i)
-                if pose is not None:
-                    energy = float(energies[i]) if i < len(energies) else 0.0
-                    results.append({
-                        "pose_id": i + 1,
-                        "vina_score": energy,
-                        "gnina_score": None,
-                        "rf_score": None
-                    })
-            except Exception as e:
-                logger.debug(f"Could not get pose {i}: {e}")
-                continue
+        try:
+            poses = v.poses(n_poses=num_modes, coordinates_only=False)
+            for i, pose in enumerate(poses):
+                energy = float(energies[i][0]) if i < len(energies) else 0.0
+                results.append({
+                    "pose_id": i + 1,
+                    "vina_score": energy,
+                    "gnina_score": None,
+                    "rf_score": None
+                })
+        except Exception as e:
+            logger.debug(f"Could not get poses: {e}")
         
         # Write output file
         os.makedirs(output_dir, exist_ok=True)
