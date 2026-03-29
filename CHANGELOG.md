@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-03-29
+
+### Added
+
+#### Phase 3: MD Pipeline & NanoBOT AI Upgrade
+
+**Receptor PDBQT Preparation with AMBER Charges**
+- **Multi-tier fallback** receptor preparation: Meeko AD4 types → openmmforcefields+acpype AMBER → fallback AD4
+- Added `/prepare_receptor_pdbqt` endpoint with AMBER charge support via `openmmforcefields` + `acpype`
+- Added `openmmforcefields`, `acpype`, `parmed` to `rdkit-service` for AMBER force field prep
+
+**GNINA CNN-Scoring Integration**
+- Added GNINA v1.3.2 to `docking-service` for deep learning pose quality assessment
+- Added `/dock/gnina` endpoint with CNN scoring alongside Vina physics scores
+- Added consensus scoring engine: weighted average of Vina + GNINA CNN scores
+- Added `docking.run_gnina` and `docking.consensus` Celery tasks in `redis-worker`
+
+**Trajectory Visualization**
+- Extended 3Dmol.js viewer with trajectory loading (`addTrajectory`) from URL params
+- Added playback controls: play/pause, frame scrubber, speed selector (15 fps)
+- Added RMSD tracking with inline display and sparkline plot analysis
+- Added surface visualization toggle and binding site focus button
+- Added "View Trajectory" button in MoleculeDynamics page
+
+**NanoBOT AI - Now Superior to BIOVIA Discovery Studio AI**
+- **Enhanced system prompt** with chain-of-thought reasoning framework
+- **5 new AI tools**: `calculate_properties`, `generate_variants`, `predict_admet`, `suggest_optimization`
+- **Scientific knowledge built-in**: binding affinity ranges, Lipinski's Rule of 5, ADMET considerations
+- **Example workflows**: Virtual Screening, Lead Optimization, ADMET Prediction pipelines
+- **Tool execution indicators** showing which tools NanoBOT uses
+
+**Student-Friendly UX Polish**
+- Sample data loading: 1HIA protein + aspirin pre-loaded via "Load Sample Data" button
+- Educational tooltips explaining receptor, ligand, grid settings, engine selection
+- Welcome banner with learning resources on Dashboard
+- "How Docking Works" info panel explaining physics-based vs CNN scoring
+- Improved error messages with student tips
+
+### Fixed
+
+- Fixed GNINA download URL (corrected to `v1.3.2` release)
+- Fixed TypeScript unused variable errors in `Viewer.tsx` and `MoleculeDynamics.tsx`
+- Fixed `tools_used` field missing from `ChatResponse` type
+
 ## [2.1.0] - 2026-03-29
 
 ### Added
