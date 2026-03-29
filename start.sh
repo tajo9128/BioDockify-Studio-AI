@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================
-# Docking Studio - Easy Start Script for Students
+# Docking Studio v2.0 - Easy Start Script for Students
 # =========================================================
 
 set -e
@@ -18,7 +18,7 @@ cd "$SCRIPT_DIR"
 print_banner() {
     echo ""
     echo -e "${CYAN}============================================================${RESET}"
-    echo -e "${CYAN}  🧬 Docking Studio${RESET}  -  Professional Molecular Docking"
+    echo -e "${CYAN}  🧬 Docking Studio v2.0${RESET}  -  AI Drug Discovery"
     echo -e "${CYAN}============================================================${RESET}"
     echo ""
 }
@@ -45,54 +45,43 @@ check_docker() {
     echo -e "${GREEN}✓ Docker is installed and running${RESET}"
 }
 
-stop_existing() {
-    echo -e "${BOLD}Stopping existing containers...${RESET}"
-    docker compose down --remove-orphans 2>/dev/null || true
-    echo -e "${GREEN}✓ Clean${RESET}"
-}
-
 start_services() {
     echo ""
-    echo -e "${BOLD}Building and starting Docking Studio...${RESET}"
-    echo -e "${YELLOW}  (First time: downloads Vina, GNINA, RDKit - may take 5-10 minutes)${RESET}"
+    echo -e "${BOLD}Starting Docking Studio v2.0...${RESET}"
+    echo -e "${YELLOW}  (First time: downloads all services - may take 10-15 minutes)${RESET}"
     echo ""
 
     docker compose up -d --build
 
     echo ""
-    echo -e "${BOLD}Waiting for backend to be ready...${RESET}"
+    echo -e "${BOLD}Waiting for gateway to be ready...${RESET}"
 
-    MAX_WAIT=60
+    MAX_WAIT=120
     WAITED=0
     while [ $WAITED -lt $MAX_WAIT ]; do
-        if curl -sf http://localhost:8000/health &>/dev/null; then
+        if curl -sf http://localhost:3000 &>/dev/null; then
             echo ""
             echo -e "${GREEN}============================================================${RESET}"
-            echo -e "${GREEN}  ✅ Docking Studio is ready!${RESET}"
+            echo -e "${GREEN}  ✅ Docking Studio v2.0 is ready!${RESET}"
             echo -e "${GREEN}============================================================${RESET}"
             echo ""
             echo -e "  🌐 ${BOLD}Open your browser and go to:${RESET}"
-            echo -e "     → ${CYAN}http://localhost:8000${RESET}"
-            echo ""
-            echo -e "  📚 API Documentation:"
-            echo -e "     → ${CYAN}http://localhost:8000/docs${RESET}"
+            echo -e "     → ${CYAN}http://localhost:3000${RESET}"
             echo ""
             return 0
         fi
 
         printf "."
-        sleep 2
-        WAITED=$((WAITED + 2))
+        sleep 3
+        WAITED=$((WAITED + 3))
     done
 
     echo ""
-    echo -e "${RED}✗ Backend failed to start within $MAX_WAIT seconds.${RESET}"
+    echo -e "${RED}✗ Gateway failed to start within $MAX_WAIT seconds.${RESET}"
     echo ""
     echo "  Check logs with:"
-    echo "  → docker compose logs backend"
-    echo ""
-    echo "  Or view last 50 lines:"
-    echo "  → docker compose logs backend --tail=50"
+    echo "  → docker compose logs gateway"
+    echo "  → docker compose logs api-backend"
     echo ""
     return 1
 }
@@ -100,13 +89,13 @@ start_services() {
 open_browser() {
     case "$(uname -s)" in
         Darwin*)
-            sleep 2 && open http://localhost:8000 &>/dev/null || true
+            sleep 2 && open http://localhost:3000 &>/dev/null || true
             ;;
         MINGW*|MSYS*|CYGWIN*)
-            sleep 2 && start http://localhost:8000 &>/dev/null || true
+            sleep 2 && start http://localhost:3000 &>/dev/null || true
             ;;
         Linux*)
-            sleep 2 && xdg-open http://localhost:8000 &>/dev/null || true
+            sleep 2 && xdg-open http://localhost:3000 &>/dev/null || true
             ;;
     esac
 }
@@ -116,9 +105,10 @@ show_status() {
     echo -e "${BOLD}Container Status:${RESET}"
     docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "  (docker compose not available)"
     echo ""
-    echo -e "  Stop everything: ${CYAN}docker compose down${RESET}"
-    echo -e "  View logs:      ${CYAN}docker compose logs -f backend${RESET}"
-    echo -e "  Restart:        ${CYAN}./start.sh${RESET}"
+    echo -e "  🌐 Open:      ${CYAN}http://localhost:3000${RESET}"
+    echo -e "  Stop:        ${CYAN}docker compose down${RESET}"
+    echo -e "  View logs:   ${CYAN}docker compose logs -f${RESET}"
+    echo -e "  Restart:     ${CYAN}./start.sh${RESET}"
     echo ""
 }
 
@@ -128,7 +118,6 @@ show_status() {
 
 print_banner
 check_docker
-stop_existing
 
 if start_services; then
     show_status

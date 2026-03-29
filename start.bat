@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem Docking Studio - Easy Start Script for Windows
+rem Docking Studio v2.0 - Easy Start Script for Windows
 rem ============================================================
 
 setlocal enabledelayedexpansion
@@ -14,7 +14,7 @@ set "RESET=[0m"
 
 echo.
 echo %CYAN%============================================================%RESET%
-echo %CYAN%  Docking Studio  -  Professional Molecular Docking%RESET%
+echo %CYAN%  Docking Studio v2.0  -  AI Drug Discovery%RESET%
 echo %CYAN%============================================================%RESET%
 echo.
 
@@ -25,47 +25,40 @@ if %ERRORLEVEL% neq 0 (
     echo %RED%  ✗ Docker is not running.%RESET%
     echo.
     echo   Please start Docker Desktop and wait for it to be ready.
-    echo   Then run this script again.
     echo.
     pause
     exit /b 1
 )
 echo %GREEN%  ✓ Docker is running%RESET%
 
-rem Stop existing
-echo.
-echo %BOLD%Stopping existing containers...%RESET%
-docker compose down --remove-orphans >nul 2>&1
-echo %GREEN%  ✓ Clean%RESET%
-
 rem Start
 echo.
-echo %BOLD%Building and starting Docking Studio...%RESET%
-echo %YELLOW%  (First time: downloads Vina, GNINA, RDKit - may take 5-10 min)%RESET%
+echo %BOLD%Starting Docking Studio v2.0...%RESET%
+echo %YELLOW%  (First time: downloads all services - may take 10-15 min)%RESET%
 echo.
 
 docker compose up -d --build
 if %ERRORLEVEL% neq 0 (
     echo %RED%✗ Build failed.%RESET%
     echo.
-    echo   Check logs with: docker compose logs backend
+    echo   Check logs with: docker compose logs
     pause
     exit /b 1
 )
 
 rem Wait for health
 echo.
-echo %BOLD%Waiting for backend to be ready...%RESET%
+echo %BOLD%Waiting for gateway to be ready...%RESET%
 
 set /a "waited=0"
-set "max_wait=60"
+set "max_wait=120"
 
 :wait_loop
-    curl -sf http://localhost:8000/health >nul 2>&1
+    curl -sf http://localhost:3000 >nul 2>&1
     if %ERRORLEVEL% equ 0 goto :ready
 
-    timeout /t 2 /nobreak >nul
-    set /a "waited+=2"
+    timeout /t 3 /nobreak >nul
+    set /a "waited+=3"
     if !waited! lss %max_wait% (
         powershell -Command "Write-Host -NoNewline '.'"
         goto :wait_loop
@@ -75,21 +68,18 @@ set "max_wait=60"
 echo.
 echo.
 echo %GREEN%============================================================%RESET%
-echo %GREEN%  Docking Studio is ready!%RESET%
+echo %GREEN%  Docking Studio v2.0 is ready!%RESET%
 echo %GREEN%============================================================%RESET%
 echo.
 echo   🌐 Open your browser and go to:
-echo   %CYAN%   http://localhost:8000%RESET%
-echo.
-echo   📚 API Documentation:
-echo   %CYAN%   http://localhost:8000/docs%RESET%
+echo   %CYAN%   http://localhost:3000%RESET%
 echo.
 echo -----------------------------------------------------------
 echo   Stop:        docker compose down
-echo   View logs:   docker compose logs -f backend
+echo   View logs:   docker compose logs -f
 echo   Restart:     start.bat
 echo -----------------------------------------------------------
 echo.
 echo Opening browser...
-start http://localhost:8000
+start http://localhost:3000
 pause
