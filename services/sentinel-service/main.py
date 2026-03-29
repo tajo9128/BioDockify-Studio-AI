@@ -523,6 +523,91 @@ def send_notification(
         return {"success": False, "error": str(e)}
 
 
+async def _poll_jobs():
+    """Background task to poll Redis for stale/failed jobs"""
+    logger.info("Sentinel watchdog started - polling for stale jobs")
+
+    while True:
+        try:
+            if redis_client and redis_available:
+                r = _get_redis()
+                if r:
+                    now = datetime.utcnow()
+                    job_patterns = [
+                        "job:*",
+                        "docking_job:*",
+                        "md_job:*",
+                        "qsar_job:*",
+                        "pharmacophore_job:*",
+                    ]
+
+                    for pattern in job_patterns:
+                        keys = r.keys(pattern)
+                        for key in keys:
+                            job_data = r.get(key)
+                            if not job_data:
+                                continue
+                            try:
+                                job = json.loads(job_data)
+                                status = job.get("status", "")
+                                updated = job.get("updated_at")
+
+                                if updated and status in ["running", "pending"]:
+                                    updated_time = datetime.fromisoformat(
+                                        updated.replace("Z", "+00:00")
+                                    )
+                                    age = (
+                                        now - updated_time.replace(tzinfo=None)
+                                    ).total_seconds()
+
+                                    if age > JOB_TIMEOUT_SECONDS:
+                                        logger.warning(
+                                            f"Job {key} timed out (age: {age}s)"
+                                        )
+                                        job_id = key.split(":")[-1]
+                                        await _escalate_job(
+                                            job_id, job, f"timeout_after_{int(age)}s"
+                                        )
+
+                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                logger.debug(f"Skipping malformed job {key}: {e}")
+
+        except Exception as e:
+            logger.error(f"Polling error: {e}")
+
+        await asyncio.sleep(POLL_INTERVAL)
+
+
+async def _escalate_job(job_id: str, job: dict, reason: str):
+    """Escalate a failed job - mark as failed and notify"""
+    try:
+        job["status"] = "failed"
+        job["failure_reason"] = reason
+        job["escalated_at"] = datetime.utcnow().isoformat()
+
+        r = _get_redis()
+        if r:
+            r.set(f"job:{job_id}", json.dumps(job), ex=86400)
+
+        logger.warning(f"Job {job_id} escalated: {reason}")
+
+        notify_data = {
+            "job_id": job_id,
+            "status": "failed",
+            "reason": reason,
+            "service": job.get("service", "unknown"),
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                await client.post(NOTIFICATION_MANAGER_URL, json=notify_data)
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.error(f"Failed to escalate job {job_id}: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 60)
@@ -532,8 +617,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"Job timeout: {JOB_TIMEOUT_SECONDS}s")
     logger.info(f"Max retries: {MAX_RETRIES}")
     logger.info("Role: Job Supervisor (monitor, retry, validate, escalate)")
-    logger.info("=" * 60)
+
+    task = asyncio.create_task(_poll_jobs())
+    logger.info("Watchdog polling task started")
+
     yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
     logger.info("Sentinel Service shutting down...")
 
 

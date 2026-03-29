@@ -8,8 +8,8 @@ services:
   # =========================================================
   gateway:
     build:
-      context: ./services/gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/gateway/Dockerfile
     container_name: docking-gateway
     hostname: gateway
     restart: unless-stopped

@@ -174,7 +174,12 @@ class OpenAIProvider(LLMProvider):
 
             self.client = httpx.AsyncClient(timeout=120.0)
 
-        payload = {"model": self.model, "messages": messages, "stream": False}
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "temperature": 0.0,
+        }
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -193,7 +198,12 @@ class OpenAIProvider(LLMProvider):
 
             self.client = httpx.AsyncClient(timeout=120.0)
 
-        payload = {"model": self.model, "messages": messages, "stream": True}
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "temperature": 0.0,
+        }
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -263,7 +273,7 @@ async def get_llm_settings() -> dict:
             "model": "gpt-4o-mini",
             "api_key": "",
             "base_url": "https://api.openai.com/v1",
-            "temperature": 0.7,
+            "temperature": 0.0,
             "max_tokens": 4096,
         }
 

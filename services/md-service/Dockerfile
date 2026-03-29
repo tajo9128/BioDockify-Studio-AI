@@ -30,7 +30,6 @@ RUN pip install --no-cache-dir \
     rdkit-pypi \
     openmm \
     openmmforcefields \
-    simtkunit \
     fastapi \
     uvicorn \
     pydantic \
@@ -44,10 +43,19 @@ RUN pip install --no-cache-dir \
     biopython \
     scipy
 
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
 WORKDIR /app
 
 COPY . .
 
-EXPOSE 8006
+RUN mkdir -p /app/storage/md && chown -R appuser:appgroup /app
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8006"]
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

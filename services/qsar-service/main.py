@@ -16,13 +16,13 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .descriptors import (
+from descriptors import (
     descriptors_for_smiles_list,
     descriptors_upload,
     DESCRIPTOR_GROUPS,
 )
-from .qsar_engine import train_model, predict_single, predict_batch
-from .model_store import list_models, get_model, delete_model
+from qsar_engine import train_model, predict_single, predict_batch
+from model_store import list_models, get_model, delete_model
 
 logging.basicConfig(
     level=logging.INFO,

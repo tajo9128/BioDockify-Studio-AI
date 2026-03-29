@@ -20,7 +20,7 @@ from pydantic import BaseModel
 import redis
 import httpx
 
-from .md_analysis import (
+from md_analysis import (
     RMSDAnalyzer,
     RMSFAnalyzer,
     EnergyAnalyzer,
@@ -28,8 +28,8 @@ from .md_analysis import (
     SASAAnalyzer,
     HydrogenBondAnalyzer,
 )
-from .publication import PublicationPackager
-from .notifications import NotificationManager
+from publication import PublicationPackager
+from notifications import NotificationManager
 
 logging.basicConfig(
     level=logging.INFO,

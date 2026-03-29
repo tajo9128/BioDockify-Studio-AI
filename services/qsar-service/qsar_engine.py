@@ -21,9 +21,9 @@ from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from .descriptors import descriptors_for_smiles_list, calculate_descriptors
-from .model_store import save_model, load_model
-from .ad_checker import assess_applicability_domain
+from descriptors import descriptors_for_smiles_list, calculate_descriptors
+from model_store import save_model, load_model
+from ad_checker import assess_applicability_domain
 
 logger = logging.getLogger("qsar-engine")
 

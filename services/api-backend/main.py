@@ -6,19 +6,27 @@ Main gateway that routes requests to specialized services
 import os
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Depends
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    BackgroundTasks,
+    Depends,
+    Form,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import httpx
 
-from .db import engine, get_db, Base
-from .models import Job, MDResult, UserProfile, MemoryEntry, ConversationHistory
+from db import engine, get_db, Base
+from models import Job, MDResult, UserProfile, MemoryEntry, ConversationHistory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ redis==5.0.1
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.0
-rdkit-pypi==2024.3.3
+rdkit-pypi==2022.9.5
 plotly==5.22.0
 matplotlib==3.9.0
 joblib==1.4.2
