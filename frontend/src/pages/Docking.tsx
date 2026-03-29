@@ -350,7 +350,7 @@ export function Docking() {
 
                   {progress.status === 'completed' && (
                     <div className="flex gap-3 mt-4">
-                      <Button onClick={() => navigate('/results')}>View Results</Button>
+                      <Button onClick={() => navigate(`/results?job=${currentJobId}`)}>View Results</Button>
                       <Button variant="outline" onClick={() => setActiveTab('input')}>New Experiment</Button>
                     </div>
                   )}

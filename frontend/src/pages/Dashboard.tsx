@@ -3,9 +3,25 @@ import { useHealth, useGPU } from '@/hooks'
 import { Card, Badge } from '@/components/ui'
 import { Button } from '@/components/ui'
 
+import { useEffect, useState } from 'react'
+
 export function Dashboard() {
   const { data: health } = useHealth()
   const { data: gpu } = useGPU()
+  const [dockerRunning, setDockerRunning] = useState(false)
+
+  useEffect(() => {
+    fetch('/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.docker_running !== undefined) {
+          setDockerRunning(data.docker_running)
+        }
+      })
+      .catch(() => {
+        setDockerRunning(false)
+      })
+  }, [])
 
   const isHealthy = health?.status === 'healthy'
   const gpuAvailable = gpu?.available
@@ -70,7 +86,9 @@ export function Dashboard() {
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border-light">
               <span className="text-text-secondary">Docker</span>
-              <Badge variant="success">Running</Badge>
+              <Badge variant={dockerRunning ? 'success' : 'error'}>
+                {dockerRunning ? 'Running' : 'Not Running'}
+              </Badge>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border-light">
               <span className="text-text-secondary">AI Assistant</span>

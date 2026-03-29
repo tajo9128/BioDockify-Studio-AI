@@ -7,7 +7,12 @@ export function JobQueue() {
   const deleteJob = useDeleteJob()
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString()
+    if (!dateStr) return '-'
+    try {
+      return new Date(dateStr).toLocaleString()
+    } catch {
+      return '-'
+    }
   }
 
   const getStatusVariant = (status: string) => {

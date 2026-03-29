@@ -325,6 +325,8 @@ class ChatResponse(BaseModel):
     conversation_id: str
     tools_used: List[str]
     model: str
+    provider: str = "openai"
+    available: bool = True
 
 
 @app.on_event("startup")
@@ -442,6 +444,8 @@ async def chat(request: ChatRequest):
             conversation_id=conv_id,
             tools_used=tools_used if "tools_used" in dir() else [],
             model=settings.get("model", "unknown"),
+            provider=settings.get("provider", "openai"),
+            available=True,
         )
 
     except Exception as e:
@@ -451,6 +455,8 @@ async def chat(request: ChatRequest):
             conversation_id=conv_id,
             tools_used=[],
             model="error",
+            provider="error",
+            available=False,
         )
 
 
@@ -485,6 +491,29 @@ async def chat_stream(request: ChatRequest):
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/chat/status")
+async def chat_status():
+    """Get chat service status"""
+    settings = await get_llm_settings()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{settings['base_url']}/models",
+                headers={"Authorization": f"Bearer {settings['api_key']}"},
+            )
+            models = [m.get("id") for m in response.json().get("data", [])[:10]]
+            available = True
+    except Exception:
+        models = []
+        available = False
+
+    return {
+        "provider": settings.get("provider", "openai"),
+        "ollama_available": available,
+        "models": [{"name": m} for m in models],
+    }
 
 
 @app.get("/memory/{conversation_id}")

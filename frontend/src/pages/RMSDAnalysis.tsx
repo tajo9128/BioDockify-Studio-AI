@@ -1,21 +1,25 @@
 import { useState } from 'react'
-import { Card, Button, Input } from '@/components/ui'
+import { Card, Button } from '@/components/ui'
+import { calculateRMSD } from '@/api/analysis'
 
 export function RMSDAnalysis() {
   const [pdb1, setPdb1] = useState('')
   const [pdb2, setPdb2] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const handleCalculate = async () => {
-    if (!pdb1 || !pdb2) return
+    if (!pdb1.trim() || !pdb2.trim()) return
     setLoading(true)
+    setError(null)
+    setResult(null)
     try {
-      const { calculateRMSD } = await import('@/api/analysis')
       const data = await calculateRMSD(pdb1, pdb2)
       setResult(data.rmsd)
-    } catch (err) {
-      console.error('RMSD calculation failed:', err)
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'RMSD calculation failed'
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -32,27 +36,41 @@ export function RMSDAnalysis() {
         <Card>
           <h3 className="font-bold text-text-primary mb-4">Calculate RMSD</h3>
           <div className="space-y-4">
-            <Input
-              label="Pose 1 (PDB content)"
-              value={pdb1}
-              onChange={(e) => setPdb1(e.target.value)}
-              placeholder="Paste PDB content..."
-            />
-            <Input
-              label="Pose 2 (PDB content)"
-              value={pdb2}
-              onChange={(e) => setPdb2(e.target.value)}
-              placeholder="Paste PDB content..."
-            />
-            <Button onClick={handleCalculate} disabled={!pdb1 || !pdb2 || loading}>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Pose 1 (PDB content)</label>
+              <textarea
+                value={pdb1}
+                onChange={(e) => setPdb1(e.target.value)}
+                placeholder="Paste PDB content or file path..."
+                rows={8}
+                className="w-full px-3 py-2 bg-surface-secondary border border-border-light rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Pose 2 (PDB content)</label>
+              <textarea
+                value={pdb2}
+                onChange={(e) => setPdb2(e.target.value)}
+                placeholder="Paste PDB content or file path..."
+                rows={8}
+                className="w-full px-3 py-2 bg-surface-secondary border border-border-light rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+              />
+            </div>
+            <Button onClick={handleCalculate} disabled={!pdb1.trim() || !pdb2.trim() || loading}>
               {loading ? 'Calculating...' : 'Calculate RMSD'}
             </Button>
           </div>
 
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
           {result !== null && (
             <div className="mt-4 p-4 bg-surface-secondary rounded-lg text-center">
               <p className="text-sm text-text-secondary">RMSD</p>
-              <p className="text-3xl font-bold text-primary">{result.toFixed(3)} Å</p>
+              <p className="text-3xl font-bold text-primary">{typeof result === 'number' ? result.toFixed(3) : result} Å</p>
             </div>
           )}
         </Card>

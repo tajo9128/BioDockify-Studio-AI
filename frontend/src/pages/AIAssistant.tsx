@@ -13,6 +13,7 @@ export function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<{ provider: string; available: boolean } | null>(null)
 
   const handleSend = async () => {
@@ -28,19 +29,27 @@ export function AIAssistant() {
     setMessages((prev) => [...prev, userMessage])
     setInput('')
     setLoading(true)
+    setError(null)
 
     try {
       const response = await sendChat(userMessage.content)
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.response,
+        content: response.response || response.error || 'AI returned no response. Check your LLM settings.',
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, assistantMessage])
-      setStatus({ provider: response.provider, available: response.available })
-    } catch (err) {
-      console.error('Chat failed:', err)
+      setStatus({ provider: response.provider || 'unknown', available: response.available !== false })
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to connect to AI assistant. Check Settings.'
+      setError(msg)
+      setMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Error: ${msg}`,
+        timestamp: new Date(),
+      }])
     } finally {
       setLoading(false)
     }
@@ -75,6 +84,14 @@ export function AIAssistant() {
           </Button>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+          <span>⚠</span>
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Status indicator */}
       {status && (
