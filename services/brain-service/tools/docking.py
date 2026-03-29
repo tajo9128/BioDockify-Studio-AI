@@ -24,23 +24,39 @@ class DockingInput(ToolInput):
 
 class DockingTool(BaseTool):
     name = "dock_ligand"
-    description = "Run molecular docking between receptor and ligand using AutoDock Vina"
+    description = (
+        "Run molecular docking between receptor and ligand using AutoDock Vina"
+    )
     category = "docking"
-    
+
     input_schema = {
         "type": "object",
         "properties": {
-            "receptor_pdbqt": {"type": "string", "description": "Path to receptor PDBQT file"},
-            "ligand_pdbqt": {"type": "string", "description": "Path to ligand PDBQT file"},
-            "exhaustiveness": {"type": "integer", "description": "Docking exhaustiveness (default: 32)"},
-            "num_modes": {"type": "integer", "description": "Number of binding modes (default: 10)"}
+            "receptor_pdbqt": {
+                "type": "string",
+                "description": "Path to receptor PDBQT file",
+            },
+            "ligand_pdbqt": {
+                "type": "string",
+                "description": "Path to ligand PDBQT file",
+            },
+            "exhaustiveness": {
+                "type": "integer",
+                "description": "Docking exhaustiveness (default: 32)",
+            },
+            "num_modes": {
+                "type": "integer",
+                "description": "Number of binding modes (default: 10)",
+            },
         },
-        "required": ["receptor_pdbqt", "ligand_pdbqt"]
+        "required": ["receptor_pdbqt", "ligand_pdbqt"],
     }
-    
+
     async def execute(self, input_data: DockingInput) -> ToolOutput:
-        DOCKING_SERVICE = os.getenv("DOCKING_SERVICE_URL", "http://docking-service:8000")
-        
+        DOCKING_SERVICE = os.getenv(
+            "DOCKING_SERVICE_URL", "http://docking-service:8002"
+        )
+
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(
@@ -56,20 +72,20 @@ class DockingTool(BaseTool):
                         "center_z": input_data.center_z,
                         "size_x": input_data.size_x,
                         "size_y": input_data.size_y,
-                        "size_z": input_data.size_z
-                    }
+                        "size_z": input_data.size_z,
+                    },
                 )
                 response.raise_for_status()
                 result = response.json()
-                
+
                 return ToolOutput(
                     success=True,
                     data={
                         "job_id": result.get("job_id"),
                         "best_energy": result.get("best_energy"),
                         "num_poses": result.get("num_poses", 0),
-                        "status": "completed"
-                    }
+                        "status": "completed",
+                    },
                 )
         except Exception as e:
             return ToolOutput(success=False, error=str(e))
@@ -83,22 +99,35 @@ class BatchDockingInput(ToolInput):
 
 class BatchDockingTool(BaseTool):
     name = "run_batch_docking"
-    description = "Run batch docking for multiple ligands from a library against a receptor"
+    description = (
+        "Run batch docking for multiple ligands from a library against a receptor"
+    )
     category = "docking"
-    
+
     input_schema = {
         "type": "object",
         "properties": {
-            "receptor_pdbqt": {"type": "string", "description": "Path to receptor PDBQT file"},
-            "ligand_library": {"type": "string", "description": "Path to ligand library (SDF/mol2)"},
-            "exhaustiveness": {"type": "integer", "description": "Docking exhaustiveness"}
+            "receptor_pdbqt": {
+                "type": "string",
+                "description": "Path to receptor PDBQT file",
+            },
+            "ligand_library": {
+                "type": "string",
+                "description": "Path to ligand library (SDF/mol2)",
+            },
+            "exhaustiveness": {
+                "type": "integer",
+                "description": "Docking exhaustiveness",
+            },
         },
-        "required": ["receptor_pdbqt", "ligand_library"]
+        "required": ["receptor_pdbqt", "ligand_library"],
     }
-    
+
     async def execute(self, input_data: BatchDockingInput) -> ToolOutput:
-        DOCKING_SERVICE = os.getenv("DOCKING_SERVICE_URL", "http://docking-service:8000")
-        
+        DOCKING_SERVICE = os.getenv(
+            "DOCKING_SERVICE_URL", "http://docking-service:8002"
+        )
+
         try:
             async with httpx.AsyncClient(timeout=3600.0) as client:
                 response = await client.post(
@@ -107,19 +136,19 @@ class BatchDockingTool(BaseTool):
                         "job_id": f"batch_{id(input_data)}",
                         "receptor_pdbqt": input_data.receptor_pdbqt,
                         "library_path": input_data.ligand_library,
-                        "exhaustiveness": input_data.exhaustiveness
-                    }
+                        "exhaustiveness": input_data.exhaustiveness,
+                    },
                 )
                 response.raise_for_status()
                 result = response.json()
-                
+
                 return ToolOutput(
                     success=True,
                     data={
                         "job_id": result.get("job_id"),
                         "num_ligands": result.get("num_ligands", 0),
-                        "status": "queued"
-                    }
+                        "status": "queued",
+                    },
                 )
         except Exception as e:
             return ToolOutput(success=False, error=str(e))

@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 DOCKING_SERVICE_URL = os.getenv("DOCKING_SERVICE_URL", "http://docking-service:8000")
 RDKIT_SERVICE_URL = os.getenv("RDKIT_SERVICE_URL", "http://rdkit-service:8000")
-PHARMACOPHORE_SERVICE_URL = os.getenv("PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8000")
+PHARMACOPHORE_SERVICE_URL = os.getenv(
+    "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8000"
+)
 
 STORAGE_DIR = Path("/app/storage")
 UPLOADS_DIR = Path("/app/uploads")
@@ -27,7 +29,6 @@ celery_app = Celery(
     "docking_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["worker"]
 )
 
 app = celery_app
@@ -51,16 +52,18 @@ def run_docking(self, job_id: str, parameters: dict):
     """Run molecular docking job"""
     logger.info(f"Starting docking job: {job_id}")
     try:
-        self.update_state(state="RUNNING", meta={"message": "Running docking simulation"})
-        
+        self.update_state(
+            state="RUNNING", meta={"message": "Running docking simulation"}
+        )
+
         async_result = httpx.post(
             f"{DOCKING_SERVICE_URL}/dock",
             json={"job_id": job_id, **parameters},
-            timeout=300.0
+            timeout=300.0,
         )
         async_result.raise_for_status()
         result = async_result.json()
-        
+
         logger.info(f"Docking job {job_id} completed: {result}")
         return {"job_id": job_id, "status": "completed", "result": result}
     except Exception as e:
@@ -74,15 +77,15 @@ def run_batch_docking(self, job_id: str, parameters: dict):
     logger.info(f"Starting batch docking job: {job_id}")
     try:
         self.update_state(state="RUNNING", meta={"message": "Processing batch docking"})
-        
+
         async_result = httpx.post(
             f"{DOCKING_SERVICE_URL}/batch",
             json={"job_id": job_id, **parameters},
-            timeout=3600.0
+            timeout=3600.0,
         )
         async_result.raise_for_status()
         result = async_result.json()
-        
+
         logger.info(f"Batch docking job {job_id} completed: {result}")
         return {"job_id": job_id, "status": "completed", "result": result}
     except Exception as e:
@@ -96,15 +99,15 @@ def process_molecule(self, job_id: str, parameters: dict):
     logger.info(f"Starting RDKit processing job: {job_id}")
     try:
         self.update_state(state="RUNNING", meta={"message": "Processing molecule"})
-        
+
         async_result = httpx.post(
             f"{RDKIT_SERVICE_URL}/process",
             json={"job_id": job_id, **parameters},
-            timeout=60.0
+            timeout=60.0,
         )
         async_result.raise_for_status()
         result = async_result.json()
-        
+
         logger.info(f"RDKit job {job_id} completed: {result}")
         return {"job_id": job_id, "status": "completed", "result": result}
     except Exception as e:
@@ -118,15 +121,15 @@ def generate_pharmacophore(self, job_id: str, parameters: dict):
     logger.info(f"Starting pharmacophore generation job: {job_id}")
     try:
         self.update_state(state="RUNNING", meta={"message": "Generating pharmacophore"})
-        
+
         async_result = httpx.post(
             f"{PHARMACOPHORE_SERVICE_URL}/generate",
             json={"job_id": job_id, **parameters},
-            timeout=120.0
+            timeout=120.0,
         )
         async_result.raise_for_status()
         result = async_result.json()
-        
+
         logger.info(f"Pharmacophore job {job_id} completed: {result}")
         return {"job_id": job_id, "status": "completed", "result": result}
     except Exception as e:
@@ -140,15 +143,15 @@ def screen_library(self, job_id: str, parameters: dict):
     logger.info(f"Starting pharmacophore screening job: {job_id}")
     try:
         self.update_state(state="RUNNING", meta={"message": "Screening library"})
-        
+
         async_result = httpx.post(
             f"{PHARMACOPHORE_SERVICE_URL}/screen",
             json={"job_id": job_id, **parameters},
-            timeout=3600.0
+            timeout=3600.0,
         )
         async_result.raise_for_status()
         result = async_result.json()
-        
+
         logger.info(f"Pharmacophore screening job {job_id} completed: {result}")
         return {"job_id": job_id, "status": "completed", "result": result}
     except Exception as e:
@@ -162,25 +165,36 @@ def run_full_screening_pipeline(self, job_id: str, parameters: dict):
     logger.info(f"Starting full screening pipeline job: {job_id}")
     try:
         self.update_state(state="RUNNING", meta={"message": "Starting full pipeline"})
-        
+
         pipeline_steps = []
-        
-        step1 = app.send_task("pharmacophore.generate", args=[job_id + "-step1", parameters.get("pharmacophore_params", {})])
+
+        step1 = app.send_task(
+            "pharmacophore.generate",
+            args=[job_id + "-step1", parameters.get("pharmacophore_params", {})],
+        )
         pipeline_steps.append(("pharmacophore", step1.id))
-        
-        self.update_state(state="RUNNING", meta={"message": "Pharmacophore generated, starting docking"})
-        
-        step2 = app.send_task("docking.batch", args=[job_id + "-step2", parameters.get("docking_params", {})])
+
+        self.update_state(
+            state="RUNNING",
+            meta={"message": "Pharmacophore generated, starting docking"},
+        )
+
+        step2 = app.send_task(
+            "docking.batch",
+            args=[job_id + "-step2", parameters.get("docking_params", {})],
+        )
         pipeline_steps.append(("docking", step2.id))
-        
-        self.update_state(state="RUNNING", meta={"message": "Docking complete, ranking results"})
-        
+
+        self.update_state(
+            state="RUNNING", meta={"message": "Docking complete, ranking results"}
+        )
+
         step3_result = {
             "pipeline": "full_screening",
             "steps": pipeline_steps,
-            "status": "completed"
+            "status": "completed",
         }
-        
+
         logger.info(f"Full pipeline job {job_id} completed: {step3_result}")
         return {"job_id": job_id, "status": "completed", "result": step3_result}
     except Exception as e:

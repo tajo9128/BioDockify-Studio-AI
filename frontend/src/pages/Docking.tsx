@@ -51,18 +51,13 @@ export function Docking() {
 
     setUploadError(null)
     try {
-      // First upload the files to the server
       const uploadResult = await uploadFile(receptorFile)
       const receptorPath = uploadResult.path
       
       const ligandUploadResult = await uploadFile(ligandFiles[0])
       const ligandPath = ligandUploadResult.path
 
-      // Start docking job
-      const jobId = `docking-${Date.now()}`
-      setCurrentJobId(jobId)
-
-      await startDocking(jobId, config.batch_size, receptorPath, ligandPath, {
+      const result = await startDocking(receptorPath, ligandPath, {
         center_x: config.center_x,
         center_y: config.center_y,
         center_z: config.center_z,
@@ -73,6 +68,7 @@ export function Docking() {
         num_modes: config.num_modes,
         engine: config.engine
       })
+      setCurrentJobId(result.job_id)
       setActiveTab('progress')
     } catch (err) {
       console.error('Failed to start docking:', err)

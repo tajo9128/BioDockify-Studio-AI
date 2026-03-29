@@ -37,8 +37,6 @@ services:
     container_name: docking-api
     hostname: api-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
     volumes:
       - storage:/app/storage
       - uploads:/app/uploads
@@ -311,9 +309,9 @@ services:
       - uploads:/app/uploads
     environment:
       - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+      - AI_MODE=autonomous
       - DOCKING_SERVICE_URL=http://docking-service:8002
       - RDKIT_SERVICE_URL=http://rdkit-service:8003
       - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004

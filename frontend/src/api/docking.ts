@@ -2,8 +2,6 @@ import { apiClient } from '@/lib/apiClient'
 import type { DockingProgress } from '@/lib/types'
 
 export async function startDocking(
-  jobId: string,
-  totalLigands = 10,
   receptorPath: string,
   ligandPath: string,
   config: {
@@ -18,23 +16,18 @@ export async function startDocking(
     engine: string
   }
 ): Promise<{ job_id: string; status: string }> {
-  const formData = new FormData()
-  formData.append('job_id', jobId)
-  formData.append('total_ligands', String(totalLigands))
-  formData.append('receptor_path', receptorPath)
-  formData.append('ligand_path', ligandPath)
-  formData.append('center_x', String(config.center_x))
-  formData.append('center_y', String(config.center_y))
-  formData.append('center_z', String(config.center_z))
-  formData.append('size_x', String(config.size_x))
-  formData.append('size_y', String(config.size_y))
-  formData.append('size_z', String(config.size_z))
-  formData.append('exhaustiveness', String(config.exhaustiveness))
-  formData.append('num_modes', String(config.num_modes))
-  formData.append('engine', config.engine)
-
-  const { data } = await apiClient.post('/dock/start', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const { data } = await apiClient.post('/dock/async', {
+    receptor_path: receptorPath,
+    ligand_path: ligandPath,
+    center_x: config.center_x,
+    center_y: config.center_y,
+    center_z: config.center_z,
+    size_x: config.size_x,
+    size_y: config.size_y,
+    size_z: config.size_z,
+    exhaustiveness: config.exhaustiveness,
+    num_modes: config.num_modes,
+    engine: config.engine,
   })
   return data
 }
@@ -49,6 +42,11 @@ export async function getDockingStatus(jobId: string): Promise<DockingProgress> 
   return data
 }
 
+export async function getDockingResult(jobId: string): Promise<any> {
+  const { data } = await apiClient.get(`/dock/${jobId}/result`)
+  return data
+}
+
 export function createDockingStream(jobId: string): EventSource {
-  return new EventSource(`/dock/${jobId}/stream`)
+  return new EventSource(`/dock/${jobId}/status`)
 }

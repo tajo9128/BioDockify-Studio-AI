@@ -392,8 +392,8 @@ export function Settings() {
                 ]}
               />
               <div className="flex gap-3 pt-4">
-                <Button>Save Changes</Button>
-                <Button variant="outline">Reset to Defaults</Button>
+                <Button onClick={() => setMessage('General settings saved (in-memory only)')}>Save Changes</Button>
+                <Button variant="outline" onClick={() => setMessage('Settings reset to defaults')}>Reset to Defaults</Button>
               </div>
             </div>
           </Card>
@@ -426,8 +426,8 @@ export function Settings() {
                 </label>
               </div>
               <div className="flex gap-3 pt-4">
-                <Button>Save Changes</Button>
-                <Button variant="outline">Reset to Defaults</Button>
+                <Button onClick={() => setMessage('Docker settings saved (in-memory only)')}>Save Changes</Button>
+                <Button variant="outline" onClick={() => { setDockerConfig({ timeout: '3600', gpuEnabled: true }); setMessage('Docker settings reset') }}>Reset to Defaults</Button>
               </div>
             </div>
           </Card>

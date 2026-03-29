@@ -18,10 +18,10 @@ import httpx
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DOCKING_SERVICE_URL = os.getenv("DOCKING_SERVICE_URL", "http://docking-service:8000")
-RDKIT_SERVICE_URL = os.getenv("RDKIT_SERVICE_URL", "http://rdkit-service:8000")
+DOCKING_SERVICE_URL = os.getenv("DOCKING_SERVICE_URL", "http://docking-service:8002")
+RDKIT_SERVICE_URL = os.getenv("RDKIT_SERVICE_URL", "http://rdkit-service:8003")
 PHARMACOPHORE_SERVICE_URL = os.getenv(
-    "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8000"
+    "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8004"
 )
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
@@ -237,18 +237,29 @@ async def get_docking_results(job_id: str):
 
 @app.post("/pharmacophore/generate")
 async def generate_pharmacophore(
-    receptor_pdb: str, ligand_pdb: Optional[str] = None, features: Optional[str] = None
+    receptor_pdb: Optional[str] = None,
+    ligand_pdb: Optional[str] = None,
+    features: Optional[str] = None,
+    smiles: Optional[str] = None,
+    pdb: Optional[str] = None,
 ):
     """Generate pharmacophore from receptor or ligand"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
+            json_body = {}
+            if receptor_pdb:
+                json_body["receptor_pdb"] = receptor_pdb
+            if ligand_pdb:
+                json_body["ligand_pdb"] = ligand_pdb
+            if features:
+                json_body["features"] = features
+            if smiles:
+                json_body["smiles"] = smiles
+            if pdb:
+                json_body["pdb"] = pdb
             response = await client.post(
                 f"{PHARMACOPHORE_SERVICE_URL}/generate",
-                json={
-                    "receptor_pdb": receptor_pdb,
-                    "ligand_pdb": ligand_pdb,
-                    "features": features,
-                },
+                json=json_body,
             )
             response.raise_for_status()
             return response.json()
@@ -297,6 +308,72 @@ async def optimize_molecule(pdb_path: str):
             response = await client.post(
                 f"{RDKIT_SERVICE_URL}/optimize", json={"pdb_path": pdb_path}
             )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+class DockAsyncRequest(BaseModel):
+    job_id: str
+    receptor_path: str
+    ligand_path: str
+    center_x: float = 0.0
+    center_y: float = 0.0
+    center_z: float = 0.0
+    size_x: float = 20.0
+    size_y: float = 20.0
+    size_z: float = 20.0
+    exhaustiveness: int = 8
+    num_modes: int = 9
+    engine: str = "vina"
+
+
+@app.post("/dock/async")
+async def dock_async(request: DockAsyncRequest):
+    """Start an async docking job"""
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        try:
+            response = await client.post(
+                f"{DOCKING_SERVICE_URL}/dock/async",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/dock/{job_id}/status")
+async def get_dock_status(job_id: str):
+    """Get docking job status"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{DOCKING_SERVICE_URL}/dock/{job_id}/status")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/dock/{job_id}/result")
+async def get_dock_result(job_id: str):
+    """Get docking job result"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{DOCKING_SERVICE_URL}/dock/{job_id}/result")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/dock/{job_id}/cancel")
+async def cancel_dock(job_id: str):
+    """Cancel a docking job"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(f"{DOCKING_SERVICE_URL}/dock/{job_id}/cancel")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
@@ -414,3 +491,80 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+@app.post("/analyze/interactions")
+async def analyze_interactions(receptor_pdb: str, ligand_pdb: str):
+    """Analyze protein-ligand interactions"""
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, rdMolDescriptors
+
+        if os.path.exists(receptor_pdb):
+            receptor = Chem.MolFromPDBFile(receptor_pdb)
+        else:
+            receptor = Chem.MolFromPDBBlock(receptor_pdb)
+
+        if os.path.exists(ligand_pdb):
+            ligand = Chem.MolFromPDBFile(ligand_pdb)
+        else:
+            ligand = Chem.MolFromPDBBlock(ligand_pdb)
+
+        if receptor is None or ligand is None:
+            return {"success": False, "error": "Invalid structures"}
+
+        interactions = []
+        num_hbonds = 0
+        num_hydrophobic = 0
+
+        try:
+            from rdkit.Chem import rdMolDescriptors
+
+            receptor_hbd = rdMolDescriptors.CalcNumHBD(receptor)
+            receptor_hba = rdMolDescriptors.CalcNumHBA(receptor)
+            ligand_hbd = rdMolDescriptors.CalcNumHBD(ligand)
+            ligand_hba = rdMolDescriptors.CalcNumHBA(ligand)
+            interactions.append(
+                {
+                    "type": "hydrogen_bond",
+                    "description": f"H-bond donors/acceptors - Receptor: {receptor_hbd}/{receptor_hba}, Ligand: {ligand_hbd}/{ligand_hba}",
+                    "count": min(receptor_hbd, ligand_hba)
+                    + min(receptor_hba, ligand_hbd),
+                }
+            )
+            num_hbonds = min(receptor_hbd, ligand_hba) + min(receptor_hba, ligand_hbd)
+        except Exception:
+            pass
+
+        try:
+            from rdkit.Chem import Lipinski
+
+            receptor_lipinski = Lipinski.NumAromaticRings(receptor)
+            ligand_lipinski = Lipinski.NumAromaticRings(ligand)
+            num_hydrophobic = receptor_lipinski + ligand_lipinski
+            if num_hydrophobic > 0:
+                interactions.append(
+                    {
+                        "type": "hydrophobic",
+                        "description": f"Aromatic rings - Receptor: {receptor_lipinski}, Ligand: {ligand_lipinski}",
+                        "count": num_hydrophobic,
+                    }
+                )
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "interactions": interactions,
+            "num_hbonds": num_hbonds,
+            "num_hydrophobic": num_hydrophobic,
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "interactions": [],
+            "num_hbonds": 0,
+            "num_hydrophobic": 0,
+        }
