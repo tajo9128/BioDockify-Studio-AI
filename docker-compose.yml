@@ -45,52 +45,9 @@ services:
       - BRAIN_SERVICE_URL=http://brain-service:8001
       - DOCKING_SERVICE_URL=http://docking-service:8002
       - RDKIT_SERVICE_URL=http://rdkit-service:8003
-      - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-    networks:
-      - docking-network
-
-  # =========================================================
-  # Brain Service - Nanobot AI Agent
-  # =========================================================
-  brain-service:
-    build:
-      context: ./services/brain-service
-      dockerfile: Dockerfile
-    image: biodockify/brain-service:latest
-    container_name: docking-brain
-    hostname: brain-service
-    restart: unless-stopped
-    ports:
-      - "8001:8000"
-    volumes:
-      - storage:/app/storage
-      - uploads:/app/uploads
-    environment:
-      - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-        - REDIS_URL=redis://redis:6379
-        - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
-        - AI_MODE=autonomous
-        - DOCKING_SERVICE_URL=http://docking-service:8002
-        - RDKIT_SERVICE_URL=http://rdkit-service:8003
-      - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
-      - QSAR_SERVICE_URL=http://qsar-service:8005
+        - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
+        - QSAR_SERVICE_URL=http://qsar-service:8005
+        - MD_SERVICE_URL=http://md-service:8000
     depends_on:
       redis:
         condition: service_healthy
@@ -274,6 +231,53 @@ services:
       - docking-network
 
   # =========================================================
+  # MD Service - Molecular Dynamics simulation (OpenMM + MD-Suite)
+  # =========================================================
+  md-service:
+    build:
+      context: ./services/md-service
+      dockerfile: Dockerfile
+    image: biodockify/md-service:latest
+    container_name: docking-md
+    hostname: md-service
+    restart: unless-stopped
+    ports:
+      - "8006:8000"
+    volumes:
+      - storage:/app/storage/md
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_TO=${EMAIL_TO:-}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-smtp.gmail.com}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - docking-network
+
+  # =========================================================
   # Redis - Job queue broker
   # =========================================================
   redis:
@@ -352,6 +356,7 @@ services:
       - DOCKING_SERVICE_URL=http://docking-service:8002
       - RDKIT_SERVICE_URL=http://rdkit-service:8003
       - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
+      - MD_SERVICE_URL=http://md-service:8000
     depends_on:
       redis:
         condition: service_healthy

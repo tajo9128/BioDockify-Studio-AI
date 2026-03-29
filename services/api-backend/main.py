@@ -24,6 +24,7 @@ PHARMACOPHORE_SERVICE_URL = os.getenv(
     "PHARMACOPHORE_SERVICE_URL", "http://pharmacophore-service:8004"
 )
 QSAR_SERVICE_URL = os.getenv("QSAR_SERVICE_URL", "http://qsar-service:8005")
+MD_SERVICE_URL = os.getenv("MD_SERVICE_URL", "http://md-service:8000")
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 TRAINING_TIMEOUT = int(os.getenv("TRAINING_TIMEOUT", "300"))
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"RDKit Service: {RDKIT_SERVICE_URL}")
     logger.info(f"Pharmacophore Service: {PHARMACOPHORE_SERVICE_URL}")
     logger.info(f"QSAR Service: {QSAR_SERVICE_URL}")
+    logger.info(f"MD Service: {MD_SERVICE_URL}")
     logger.info(f"Brain Service: {BRAIN_SERVICE_URL}")
     yield
     logger.info("API Backend shutting down...")
@@ -104,6 +106,8 @@ async def root():
             "docking": "/docking",
             "rdkit": "/rdkit",
             "pharmacophore": "/pharmacophore",
+            "qsar": "/qsar",
+            "md": "/md",
             "brain": "/brain",
         },
     }
@@ -630,6 +634,272 @@ async def qsar_model_delete(model_id: str):
             raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================
+# MD Service proxies (Molecular Dynamics + MD-Suite)
+# ============================================================
+
+
+class MDDynamicsRequest(BaseModel):
+    pdb_content: str
+    steps: int = 50000
+    temperature: float = 300.0
+    pressure: float = 1.0
+    frame_interval: int = 500
+    solvent_model: str = "tip3p"
+    ionic_strength: float = 0.0
+    name: str = "simulation"
+    notify_on_start: bool = False
+    notify_on_complete: bool = True
+
+
+@app.post("/md/dynamics")
+async def md_run_dynamics(request: MDDynamicsRequest):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/dynamics",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+class MDAnalysisRequest(BaseModel):
+    job_id: str
+    trajectory_path: Optional[str] = None
+    energy_csv_path: Optional[str] = None
+
+
+@app.post("/md/analysis/rmsd")
+async def md_analyze_rmsd(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/rmsd", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/rmsf")
+async def md_analyze_rmsf(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/rmsf", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/energy")
+async def md_analyze_energy(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/energy", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/gyration")
+async def md_analyze_gyration(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/gyration", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/sasa")
+async def md_analyze_sasa(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/sasa", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/hbonds")
+async def md_analyze_hbonds(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/hbonds", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/analysis/all")
+async def md_analyze_all(request: MDAnalysisRequest):
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/analysis/all", json=request.model_dump()
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/job/{job_id}")
+async def md_get_job(job_id: str):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/job/{job_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/job/{job_id}/trajectory")
+async def md_get_trajectory(job_id: str):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/job/{job_id}/trajectory")
+            response.raise_for_status()
+            return response.content
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/job/{job_id}/frame")
+async def md_get_frame(job_id: str):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/job/{job_id}/frame")
+            response.raise_for_status()
+            return response.content
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/job/{job_id}/energies")
+async def md_get_energies(job_id: str):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/job/{job_id}/energies")
+            response.raise_for_status()
+            return response.content
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+class MDPublicationRequest(BaseModel):
+    job_id: str
+    project_name: str = "md_project"
+    analysis_job_id: Optional[str] = None
+    compress: bool = True
+    notify_on_complete: bool = False
+
+
+@app.post("/md/publication/package")
+async def md_create_publication(request: MDPublicationRequest):
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/publication/package",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+class MDNotifyRequest(BaseModel):
+    event: str
+    title: str
+    message: str
+    details: Optional[Dict] = None
+
+
+@app.post("/md/notify")
+async def md_notify(request: MDNotifyRequest):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/notify",
+                json=request.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/notify/status")
+async def md_notify_status():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/notify/status")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/notify/test")
+async def md_notify_test(channel: str = "discord"):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/notify/test",
+                params={"channel": channel},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/md/minimize")
+async def md_minimize(pdb_content: str):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{MD_SERVICE_URL}/minimize",
+                params={"pdb_content": pdb_content},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/md/health")
+async def md_health():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(f"{MD_SERVICE_URL}/health")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/rdkit/smiles-to-3d")
 async def smiles_to_3d(smiles: str, name: Optional[str] = None):
     """Convert SMILES to 3D structure"""
@@ -797,6 +1067,8 @@ async def get_stats():
                 "docking_service": "unknown",
                 "rdkit_service": "unknown",
                 "pharmacophore_service": "unknown",
+                "qsar_service": "unknown",
+                "md_service": "unknown",
                 "brain_service": "unknown",
             },
         }
@@ -806,6 +1078,8 @@ async def get_stats():
                 ("docking_service", DOCKING_SERVICE_URL),
                 ("rdkit_service", RDKIT_SERVICE_URL),
                 ("pharmacophore_service", PHARMACOPHORE_SERVICE_URL),
+                ("qsar_service", QSAR_SERVICE_URL),
+                ("md_service", MD_SERVICE_URL),
                 ("brain_service", BRAIN_SERVICE_URL),
             ]:
                 try:

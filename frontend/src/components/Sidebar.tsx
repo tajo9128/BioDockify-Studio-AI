@@ -18,6 +18,7 @@ const navItems = [
       { path: '/interactions', label: 'Interactions', icon: '🔗' },
       { path: '/pharmacophore', label: 'Pharmacophore', icon: '🧬' },
       { path: '/qsar', label: 'QSAR Modeling', icon: '🧮' },
+      { path: '/md', label: 'Molecule Dynamics', icon: '⚛' },
     ],
   },
   {
