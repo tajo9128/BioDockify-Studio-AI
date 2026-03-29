@@ -97,6 +97,7 @@ export interface ChatResponse {
   response: string
   provider: string
   available: boolean
+  tools_used?: string[]
   error?: string
 }
 

@@ -112,11 +112,22 @@ class ToolRegistry:
 def register_all_tools():
     """Register all available tools"""
     from tools.docking import DockingTool, BatchDockingTool
-    from tools.rdkit import SmilesTo3DTool, ConvertFormatTool, OptimizeMoleculeTool
+    from tools.rdkit import (
+        SmilesTo3DTool,
+        ConvertFormatTool,
+        OptimizeMoleculeTool,
+        CalculatePropertiesTool,
+        GenerateMoleculeVariantsTool,
+    )
     from tools.pharmacophore import GeneratePharmacophoreTool, ScreenLibraryTool
     from integrations.pubchem import FetchCompoundsTool, SearchCompoundsTool
     from integrations.pdb import FetchProteinTool
-    from tools.analysis import AnalyzeInteractionsTool, PredictBindingTool
+    from tools.analysis import (
+        AnalyzeInteractionsTool,
+        PredictBindingTool,
+        PredictADMETTool,
+        SuggestOptimizationTool,
+    )
 
     registry = ToolRegistry()
 
@@ -128,6 +139,8 @@ def register_all_tools():
     registry.register(SmilesTo3DTool())
     registry.register(ConvertFormatTool())
     registry.register(OptimizeMoleculeTool())
+    registry.register(CalculatePropertiesTool())
+    registry.register(GenerateMoleculeVariantsTool())
 
     # Pharmacophore tools
     registry.register(GeneratePharmacophoreTool())
@@ -141,5 +154,7 @@ def register_all_tools():
     # Analysis tools
     registry.register(AnalyzeInteractionsTool())
     registry.register(PredictBindingTool())
+    registry.register(PredictADMETTool())
+    registry.register(SuggestOptimizationTool())
 
     return registry

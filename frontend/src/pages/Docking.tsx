@@ -7,6 +7,62 @@ import { uploadFile, downloadFile } from '@/api/upload'
 import { prepareProtein, prepareReceptorPDBQT } from '@/api/rdkit'
 import type { DockingConfig } from '@/lib/types'
 
+const SAMPLE_RECEPTOR_PDB = `HEADER    IMMUNE SYSTEM                           15-APR-98   1HIA
+TITLE     CRYSTAL STRUCTURE OF HUMAN HEAT-LABILE ENTEROTOXIN
+EXPDTA    X-RAY DIFFRACTION
+HETATM    1  N   MET A   1       9.287  11.614  -1.060  1.00 28.12           N
+HETATM    2  CA  MET A   1      10.286  11.038  -1.989  1.00 27.95           C
+HETATM    3  C   MET A   1      11.669  11.451  -1.661  1.00 28.26           C
+HETATM    4  O   MET A   1      12.039  12.619  -1.589  1.00 30.27           O
+HETATM    5  N   ILE A   2      12.516  10.421  -1.472  1.00 27.21           N
+HETATM    6  CA  ILE A   2      13.922  10.668  -1.148  1.00 27.26           C
+HETATM    7  C   ILE A   2      14.802  10.296  -2.322  1.00 27.85           C
+HETATM    8  O   ILE A   2      15.995  10.583  -2.399  1.00 29.59           O
+HETATM    9  N   GLN A   3      14.261   9.687  -3.311  1.00 26.84           N
+HETATM   10  CA  GLN A   3      14.996   9.257  -4.500  1.00 27.01           C
+HETATM   11  C   GLN A   3      14.103   8.443  -5.420  1.00 28.07           C
+HETATM   12  O   GLN A   3      13.020   7.954  -5.086  1.00 28.77           O
+HETATM   13  N   VAL A   4      14.578   8.279  -6.640  1.00 26.58           N
+HETATM   14  CA  VAL A   4      13.816   7.510  -7.636  1.00 26.74           C
+HETATM   15  C   VAL A   4      12.339   7.896  -7.742  1.00 27.03           C
+HETATM   16  O   VAL A   4      11.513   7.663  -6.843  1.00 27.72           O
+HETATM   17  N   GLU A   5      12.000   8.508  -8.879  1.00 26.07           N
+HETATM   18  CA  GLU A   5      10.630   8.932  -9.112  1.00 26.23           C
+HETATM   19  C   GLU A   5      10.523  10.453  -9.246  1.00 27.04           C
+HETATM   20  O   GLU A   5       9.424  11.008  -9.378  1.00 28.03           O
+HETATM   21  N   TYR A   6       9.876  11.657 -10.220  1.00 25.97           N
+HETATM   22  CA  TYR A   6       9.847  13.112 -10.446  1.00 26.46           C
+HETATM   23  C   TYR A   6       8.484  13.715 -10.165  1.00 27.33           C
+HETATM   24  O   TYR A   6       7.453  13.062  -9.997  1.00 27.68           O
+HETATM   25  N   CYS A   7       8.484  15.049 -10.107  1.00 26.46           N
+HETATM   26  CA  CYS A   7       7.236  15.757  -9.845  1.00 27.05           C
+HETATM   27  C   CYS A   7       7.390  17.269  -9.673  1.00 27.96           C
+HETATM   28  O   CYS A   7       8.511  17.810  -9.730  1.00 29.03           O
+CONECT    1    2
+CONECT    2    1    3
+CONECT    3    2    4    5
+END
+`
+
+const SAMPLE_LIGAND_SMI = 'CC(=O)Oc1ccccc1C(=O)O'
+
+interface TooltipProps {
+  text: string
+  children: React.ReactNode
+}
+
+function Tooltip({ text, children }: TooltipProps) {
+  return (
+    <div className="relative inline-block group">
+      {children}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-lg">
+        {text}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+      </div>
+    </div>
+  )
+}
+
 export function Docking() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('input')
@@ -21,6 +77,7 @@ export function Docking() {
   const [receptorPrepInfo, setReceptorPrepInfo] = useState<{watersRemoved: number; hydrogensAdded: number} | null>(null)
   const [preparingReceptorPDBQT, setPreparingReceptorPDBQT] = useState(false)
   const [preparedReceptorPDBQTPath, setPreparedReceptorPDBQTPath] = useState<string | null>(null)
+  const [showSampleDataHint, setShowSampleDataHint] = useState(true)
   const [config, setConfig] = useState<DockingConfig>({
     center_x: 0,
     center_y: 0,
@@ -36,6 +93,20 @@ export function Docking() {
 
   const { progress, error } = useDockingStream(currentJobId)
 
+  const handleLoadSampleData = useCallback(() => {
+    const receptorBlob = new Blob([SAMPLE_RECEPTOR_PDB], { type: 'text/plain' })
+    const receptorFakeFile = new File([receptorBlob], '1HIA_protein.pdb', { type: 'text/plain' })
+    setReceptorFile(receptorFakeFile)
+    setReceptorName('1HIA_protein.pdb (Sample)')
+    
+    const ligandBlob = new Blob([SAMPLE_LIGAND_SMI], { type: 'text/plain' })
+    const ligandFakeFile = new File([ligandBlob], 'aspirin.smi', { type: 'text/plain' })
+    setLigandFiles([ligandFakeFile])
+    setLigandName('Aspirin (Sample)')
+    setShowSampleDataHint(false)
+    setUploadError(null)
+  }, [])
+
   const handleReceptorUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -43,7 +114,9 @@ export function Docking() {
     setReceptorName(file.name)
     setPreparedReceptorPath(null)
     setReceptorPrepInfo(null)
+    setPreparedReceptorPDBQTPath(null)
     setUploadError(null)
+    setShowSampleDataHint(false)
   }, [])
 
   const handleLigandUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,6 +125,7 @@ export function Docking() {
     setLigandFiles(files)
     setLigandName(`${files.length} files selected`)
     setUploadError(null)
+    setShowSampleDataHint(false)
   }, [])
 
   const handlePrepareReceptor = async () => {
@@ -174,6 +248,25 @@ export function Docking() {
         <p className="text-text-secondary mt-1">Configure and run molecular docking simulation</p>
       </div>
 
+      {showSampleDataHint && (
+        <Card padding="lg" className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-4xl">🚀</span>
+              <div>
+                <h3 className="font-bold text-text-primary">New to Molecular Docking?</h3>
+                <p className="text-sm text-text-secondary mt-1">
+                  Start quickly with sample data — protein + ligand pre-loaded for you!
+                </p>
+              </div>
+            </div>
+            <Button variant="primary" onClick={handleLoadSampleData}>
+              Load Sample Data
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       <TabPanel>
@@ -183,8 +276,13 @@ export function Docking() {
             <Card padding="lg">
               <div className="flex items-center gap-3 mb-4">
                 <span className="w-8 h-8 rounded-full bg-primary-50 text-primary flex items-center justify-center font-bold">1</span>
-                <div>
-                  <h3 className="font-bold text-text-primary">Target Receptor</h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-text-primary">Target Receptor</h3>
+                    <Tooltip text="The receptor is the protein target (usually from PDB). We prepare it by removing water molecules and adding hydrogen atoms before docking.">
+                      <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                    </Tooltip>
+                  </div>
                   <p className="text-xs text-text-tertiary">Protein structure (.pdb, .pdbqt)</p>
                 </div>
               </div>
@@ -272,8 +370,13 @@ export function Docking() {
             <Card padding="lg">
               <div className="flex items-center gap-3 mb-4">
                 <span className="w-8 h-8 rounded-full bg-success-bg text-success flex items-center justify-center font-bold">2</span>
-                <div>
-                  <h3 className="font-bold text-text-primary">Ligand Library</h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-text-primary">Ligand Molecule</h3>
+                    <Tooltip text="The ligand is the small molecule drug or compound you want to test against the receptor. Can be a single molecule or a library.">
+                      <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                    </Tooltip>
+                  </div>
                   <p className="text-xs text-text-tertiary">Small molecules, drugs (.sdf, .mol2, .smi)</p>
                 </div>
               </div>
@@ -317,14 +420,19 @@ export function Docking() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             {/* Engine Selection */}
             <Card padding="lg">
-              <h3 className="font-bold text-text-primary mb-4">🔬 BioDockify Tri-Score Protocol</h3>
-              <p className="text-xs text-text-tertiary mb-4">International Standard for molecular docking</p>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="font-bold text-text-primary">🔬 Docking Engine</h3>
+                <Tooltip text="AutoDock Vina uses physics-based scoring. GNINA adds deep learning CNN scores. Consensus combines both for more reliable predictions.">
+                  <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                </Tooltip>
+              </div>
+              <p className="text-xs text-text-secondary mb-4">Choose how to score binding poses</p>
 
               <div className="space-y-3">
                 {[
-                  { id: 'vina', label: 'Vina', desc: 'Physics-based scoring', checked: true },
-                  { id: 'gnina', label: 'GNINA', desc: 'Deep learning CNN', checked: false },
-                  { id: 'consensus', label: 'Consensus (Vina + GNINA)', desc: 'Combined scoring', checked: false },
+                  { id: 'vina', label: 'AutoDock Vina', desc: 'Physics-based scoring', detail: 'Fast, well-validated', icon: '⚡' },
+                  { id: 'gnina', label: 'GNINA', desc: 'Deep learning CNN', detail: 'Neural network accuracy', icon: '🧠' },
+                  { id: 'consensus', label: 'Consensus (Recommended)', desc: 'Vina + GNINA combined', detail: 'Best reliability', icon: '🎯' },
                 ].map((engine) => (
                   <label
                     key={engine.id}
@@ -342,32 +450,26 @@ export function Docking() {
                       onChange={(e) => setConfig({ ...config, engine: e.target.value as any })}
                       className="sr-only"
                     />
-                    <div
-                      className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                      style={{
-                        borderColor: config.engine === engine.id ? '#2e5aac' : '#e2e8f0',
-                      }}
-                    >
-                      {config.engine === engine.id && (
-                        <div className="w-2 h-2 rounded-full bg-primary" />
-                      )}
-                    </div>
+                    <div className="text-2xl">{engine.icon}</div>
                     <div className="flex-1">
                       <p className="font-semibold text-text-primary">{engine.label}</p>
-                      <p className="text-xs text-text-tertiary">{engine.desc}</p>
+                      <p className="text-xs text-text-primary">{engine.desc}</p>
+                      <p className="text-xs text-text-tertiary">{engine.detail}</p>
                     </div>
                   </label>
                 ))}
               </div>
-
-              <p className="text-xs text-text-tertiary mt-4 italic">
-                Powered by Vina (Physics) + GNINA (Deep Learning) + RF-Score (ML)
-              </p>
             </Card>
 
             {/* Grid Configuration */}
             <Card padding="lg">
-              <h3 className="font-bold text-text-primary mb-4">📦 Grid Box Configuration</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="font-bold text-text-primary">📦 Search Space (Grid Box)</h3>
+                <Tooltip text="The grid box defines where Vina will search for ligand binding positions. The box should cover the active site or region of interest.">
+                  <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                </Tooltip>
+              </div>
+              <p className="text-xs text-text-secondary mb-4">Define the region to search for binding</p>
 
               <div className="space-y-4">
                 <div>
@@ -431,17 +533,28 @@ export function Docking() {
         {activeTab === 'hardware' && (
           <div className="mt-6">
             <Card padding="lg">
-              <h3 className="font-bold text-text-primary mb-4">🖥 Hardware Status</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="font-bold text-text-primary">🖥 Hardware Acceleration</h3>
+                <Tooltip text="GPU acceleration significantly speeds up docking calculations using NVIDIA CUDA.">
+                  <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                </Tooltip>
+              </div>
               <div className="flex items-center gap-4 p-4 bg-surface-secondary rounded-lg mb-4">
-                <span className="text-3xl">🖥️</span>
+                <span className="text-3xl">🚀</span>
                 <div>
                   <p className="font-semibold text-text-primary">GPU Acceleration</p>
                   <p className="text-sm text-text-secondary">Powered by NVIDIA CUDA</p>
                 </div>
               </div>
-              <p className="text-sm text-text-secondary">
-                The system will automatically use GPU acceleration when available for faster docking calculations.
-              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-800 mb-2">How Docking Works</h4>
+                <p className="text-xs text-blue-700 mb-2">
+                  Molecular docking predicts how a small molecule (ligand) binds to a protein (receptor) by searching through possible orientations and scoring them.
+                </p>
+                <p className="text-xs text-blue-600">
+                  <strong>AutoDock Vina</strong> uses a smart search algorithm. <strong>GNINA</strong> adds deep learning to improve accuracy.
+                </p>
+              </div>
             </Card>
           </div>
         )}

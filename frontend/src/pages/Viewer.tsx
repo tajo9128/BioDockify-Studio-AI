@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, Button } from '@/components/ui'
 
-interface ViewerProps {
+export interface ViewerProps {
   trajectoryPath?: string
   topologyPath?: string
   initialFrame?: number
@@ -342,9 +342,9 @@ export function Viewer() {
   const [style, setStyle] = useState('cartoon')
   const [colorScheme, setColorScheme] = useState('chain')
   const [loaded, setLoaded] = useState(false)
-  const [trajectoryPath, setTrajectoryPath] = useState<string | null>(null)
-  const [topologyPath, setTopologyPath] = useState<string | null>(null)
-  const [bindingSite, setBindingSite] = useState<BindingSite | null>(null)
+  const [_trajectoryPath, setTrajectoryPath] = useState<string | null>(null)
+  const [_topologyPath, setTopologyPath] = useState<string | null>(null)
+  const [bindingSite, _setBindingSite] = useState<BindingSite | null>(null)
   const [trajState, setTrajState] = useState<TrajectoryPlayerState>({
     isPlaying: false,
     currentFrame: 0,
@@ -355,7 +355,7 @@ export function Viewer() {
   })
   const [showTrajectoryControls, setShowTrajectoryControls] = useState(false)
   const [showSurface, setShowSurface] = useState(false)
-  const [activePanel, setActivePanel] = useState<'style' | 'trajectory' | 'analysis'>('style')
+  const [_activePanel, _setActivePanel] = useState<'style' | 'trajectory' | 'analysis'>('style')
   const animationRef = useRef<number | null>(null)
   const lastFrameRef = useRef<number>(0)
 
@@ -527,7 +527,6 @@ export function Viewer() {
 
   const handlePlayPause = () => {
     if (!viewerRef.current) return
-    const viewer = viewerRef.current
 
     if (trajState.isPlaying) {
       if (animationRef.current) {
@@ -593,11 +592,20 @@ export function Viewer() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">3D Molecular Viewer</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-text-primary">3D Molecular Viewer</h1>
+          <div className="relative group">
+            <span className="text-gray-400 cursor-help">ℹ️</span>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg w-72 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-lg">
+              Visualize protein structures in 3D. Drag to rotate, scroll to zoom, right-drag to pan.
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+            </div>
+          </div>
+        </div>
         <p className="text-text-secondary mt-1">
           {showTrajectoryControls
-            ? `Trajectory: Frame ${trajState.currentFrame + 1}/${trajState.totalFrames || 1}${trajState.rmsdHistory[trajState.currentFrame] !== undefined ? ` | RMSD: ${trajState.rmsdHistory[trajState.currentFrame].toFixed(2)} Å` : ''}`
-            : 'Visualize protein-ligand complexes with colorful chains'}
+            ? `📽️ Trajectory Playback | Frame ${trajState.currentFrame + 1} of ${trajState.totalFrames || 1}${trajState.rmsdHistory[trajState.currentFrame] !== undefined ? ` | RMSD: ${trajState.rmsdHistory[trajState.currentFrame].toFixed(3)} Å` : ''}`
+            : '🧬 Interactive 3D visualization of molecular structures'}
         </p>
       </div>
 
@@ -607,12 +615,13 @@ export function Viewer() {
           <Card padding="none" className="overflow-hidden">
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 p-3 bg-surface-secondary border-b border-border-light">
+              <span className="text-xs text-text-tertiary mr-2">Controls:</span>
               {[
-                { icon: '⟳', label: 'Rotate', handler: handleRotate },
+                { icon: '🔄', label: 'Auto Rotate', handler: handleRotate },
                 { icon: '⊕', label: 'Zoom Fit', handler: handleZoomFit },
-                { icon: '↺', label: 'Reset', handler: handleReset },
+                { icon: '↺', label: 'Reset View', handler: handleReset },
                 ...(showTrajectoryControls ? [{ icon: '🎬', label: 'Surface', handler: handleToggleSurface }] : []),
-                ...(bindingSite ? [{ icon: '🎯', label: 'Binding Site', handler: handleCenterBindingSite }] : []),
+                ...(bindingSite ? [{ icon: '🎯', label: 'Focus Site', handler: handleCenterBindingSite }] : []),
                 { icon: '📷', label: 'Screenshot', handler: handleScreenshot },
               ].map((btn) => (
                 <Button
@@ -728,24 +737,33 @@ export function Viewer() {
 
           {showTrajectoryControls && trajState.rmsdHistory.length > 0 && (
             <div className="mt-6">
-              <h3 className="font-bold text-text-primary mb-4">RMSD Analysis</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="font-bold text-text-primary">RMSD Analysis</h3>
+                <div className="relative group">
+                  <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-lg">
+                    RMSD (Root Mean Square Deviation) measures how much the structure moves from the reference frame. Lower values = more stable.
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </div>
               <div className="p-3 bg-surface-secondary rounded-lg">
                 <div className="text-xs space-y-2">
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Current:</span>
-                    <span className="font-mono font-bold">
+                    <span className="font-mono font-bold text-primary">
                       {trajState.rmsdHistory[trajState.currentFrame]?.toFixed(3) ?? '--'} Å
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Min:</span>
-                    <span className="font-mono">
+                    <span className="font-mono text-green-600">
                       {Math.min(...trajState.rmsdHistory).toFixed(3)} Å
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Max:</span>
-                    <span className="font-mono">
+                    <span className="font-mono text-red-600">
                       {Math.max(...trajState.rmsdHistory).toFixed(3)} Å
                     </span>
                   </div>
@@ -773,18 +791,38 @@ export function Viewer() {
                     <line x1="0" y1="30" x2="100" y2="30" stroke="#374151" strokeWidth="0.5" />
                   </svg>
                 </div>
+                <p className="text-xs text-text-tertiary mt-2">
+                  RMSD plot showing structural deviation over time
+                </p>
               </div>
             </div>
           )}
 
+          <div className="mt-6">
+            <h3 className="font-bold text-text-primary mb-3">Visualization Guide</h3>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-blue-600">🖱️</span>
+                <span className="text-xs text-blue-800">Drag to rotate</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-blue-600">🔍</span>
+                <span className="text-xs text-blue-800">Scroll to zoom</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-blue-600">✋</span>
+                <span className="text-xs text-blue-800">Right-drag to pan</span>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-6 p-3 bg-surface-secondary rounded-lg">
             <p className="text-xs text-text-secondary">
-              <strong>Controls:</strong><br />
+              <strong>Chain Colors:</strong><br />
               🔴 Chain A: Red<br />
               🔵 Chain B: Teal<br />
-              Drag: Rotate<br />
-              Scroll: Zoom<br />
-              Right-drag: Pan
+              🔵 Chain C: Blue<br />
+              🟢 Chain D: Green
             </p>
           </div>
         </Card>

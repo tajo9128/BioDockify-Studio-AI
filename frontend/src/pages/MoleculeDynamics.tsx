@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Card, Button, Tabs, TabPanel } from '@/components/ui'
 import Plot from 'react-plotly.js'
 import {
@@ -53,7 +53,6 @@ const SOLVENT_MODELS = ['tip3p', 'spce', 'tip4pew']
 
 export function MoleculeDynamics() {
   const navigate = useNavigate()
-  const location = useLocation()
   const [activeTab, setActiveTab] = useState('setup')
   const [pdbContent, setPdbContent] = useState('')
   const [steps, setSteps] = useState(50000)
