@@ -26,14 +26,8 @@ import httpx
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
-OPENAI_BASE = os.getenv("OPENAI_BASE", "https://api.openai.com/v1")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 API_BACKEND_URL = os.getenv("API_BACKEND_URL", "http://api-backend:8000")
+BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
 
 STORAGE_DIR = Path("/app/storage")
 UPLOADS_DIR = Path("/app/uploads")
@@ -43,7 +37,7 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 app = FastAPI(
     title="Nanobot Brain Service",
     description="AI Agent for Docking Studio with drug discovery tools",
-    version="2.0.0"
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -57,53 +51,53 @@ app.add_middleware(
 
 class BaseTool(ABC):
     """Base class for tools (simplified from nanobot)"""
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         pass
-    
+
     @property
     @abstractmethod
     def description(self) -> str:
         pass
-    
+
     @property
     @abstractmethod
     def parameters(self) -> dict:
         pass
-    
+
     @abstractmethod
     async def execute(self, **kwargs) -> Any:
         pass
-    
+
     def to_schema(self) -> dict:
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.parameters
-            }
+                "parameters": self.parameters,
+            },
         }
 
 
 class ToolRegistry:
     """Simple tool registry with validation"""
-    
+
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
-    
+
     def register(self, tool: BaseTool) -> None:
         self._tools[tool.name] = tool
         logger.info(f"Registered tool: {tool.name}")
-    
+
     def get(self, name: str) -> Optional[BaseTool]:
         return self._tools.get(name)
-    
+
     def list_tools(self) -> List[Dict]:
         return [tool.to_schema()["function"] for tool in self._tools.values()]
-    
+
     async def execute(self, name: str, params: dict) -> Any:
         tool = self.get(name)
         if not tool:
@@ -116,30 +110,38 @@ class ToolRegistry:
 
 class ConversationMemory:
     """Simple conversation memory"""
-    
+
     def __init__(self, max_turns: int = 20):
         self.max_turns = max_turns
         self._conversations: Dict[str, List[Dict]] = {}
-    
-    def add(self, conversation_id: str, role: str, content: str, tools_used: List[str] = None) -> None:
+
+    def add(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        tools_used: List[str] = None,
+    ) -> None:
         if conversation_id not in self._conversations:
             self._conversations[conversation_id] = []
-        
+
         entry = {"role": role, "content": content}
         if tools_used:
             entry["tools_used"] = tools_used
-        
+
         self._conversations[conversation_id].append(entry)
-        
+
         if len(self._conversations[conversation_id]) > self.max_turns:
-            self._conversations[conversation_id] = self._conversations[conversation_id][-self.max_turns:]
-    
+            self._conversations[conversation_id] = self._conversations[conversation_id][
+                -self.max_turns :
+            ]
+
     def get_history(self, conversation_id: str, max_turns: int = 0) -> List[Dict]:
         history = self._conversations.get(conversation_id, [])
         if max_turns > 0:
             return history[-max_turns:]
         return history
-    
+
     def clear(self, conversation_id: str) -> None:
         if conversation_id in self._conversations:
             del self._conversations[conversation_id]
@@ -147,11 +149,11 @@ class ConversationMemory:
 
 class LLMProvider(ABC):
     """Abstract LLM provider"""
-    
+
     @abstractmethod
     async def chat(self, messages: List[dict], tools: List[dict] = None) -> dict:
         pass
-    
+
     @abstractmethod
     async def chat_stream(self, messages: List[dict], tools: List[dict] = None):
         pass
@@ -159,54 +161,48 @@ class LLMProvider(ABC):
 
 class OpenAIProvider(LLMProvider):
     """OpenAI-compatible provider (works with Ollama too)"""
-    
+
     def __init__(self, api_key: str, base_url: str, model: str):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.client = None
-    
+
     async def chat(self, messages: List[dict], tools: List[dict] = None) -> dict:
         if not self.client:
             import httpx
+
             self.client = httpx.AsyncClient(timeout=120.0)
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
+
+        payload = {"model": self.model, "messages": messages, "stream": False}
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        
+
         response = await self.client.post(
             f"{self.base_url}/chat/completions",
             json=payload,
-            headers={"Authorization": f"Bearer {self.api_key}"}
+            headers={"Authorization": f"Bearer {self.api_key}"},
         )
         response.raise_for_status()
         return response.json()
-    
+
     async def chat_stream(self, messages: List[dict], tools: List[dict] = None):
         if not self.client:
             import httpx
+
             self.client = httpx.AsyncClient(timeout=120.0)
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True
-        }
+
+        payload = {"model": self.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        
+
         async with self.client.stream(
             "POST",
             f"{self.base_url}/chat/completions",
             json=payload,
-            headers={"Authorization": f"Bearer {self.api_key}"}
+            headers={"Authorization": f"Bearer {self.api_key}"},
         ) as response:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
@@ -217,62 +213,73 @@ class OpenAIProvider(LLMProvider):
 
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude provider"""
-    
+
     def __init__(self, api_key: str, model: str = "claude-3-sonnet-20240229"):
         self.api_key = api_key
         self.model = model
         self.client = None
-    
+
     async def chat(self, messages: List[dict], tools: List[dict] = None) -> dict:
         if not self.client:
             import httpx
+
             self.client = httpx.AsyncClient(timeout=120.0)
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 4096
-        }
+
+        payload = {"model": self.model, "messages": messages, "max_tokens": 4096}
         if tools:
             payload["tools"] = tools
-        
+
         response = await self.client.post(
             "https://api.anthropic.com/v1/messages",
             json=payload,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01"
-            }
+                "anthropic-version": "2023-06-01",
+            },
         )
         response.raise_for_status()
         return response.json()
-    
+
     async def chat_stream(self, messages: List[dict], tools: List[dict] = None):
         raise NotImplementedError("Streaming not implemented for Anthropic")
 
 
 registry = ToolRegistry()
 memory = ConversationMemory()
-provider: Optional[LLMProvider] = None
 
 
-def get_provider() -> LLMProvider:
-    global provider
-    if provider:
-        return provider
-    
-    if OPENAI_API_KEY:
-        provider = OpenAIProvider(OPENAI_API_KEY, OPENAI_BASE, OPENAI_MODEL)
-        logger.info(f"Using OpenAI: {OPENAI_MODEL}")
-    elif ANTHROPIC_API_KEY:
-        provider = AnthropicProvider(ANTHROPIC_API_KEY)
-        logger.info("Using Anthropic Claude")
+async def get_llm_settings() -> dict:
+    """Fetch LLM settings from api-backend"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{API_BACKEND_URL}/llm/settings")
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch LLM settings: {e}")
+        return {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "api_key": "",
+            "base_url": "https://api.openai.com/v1",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        }
+
+
+async def get_provider() -> LLMProvider:
+    settings = await get_llm_settings()
+    api_key = settings.get("api_key", "")
+    base_url = settings.get("base_url", "https://api.openai.com/v1")
+    model = settings.get("model", "gpt-4o-mini")
+
+    provider_type = settings.get("provider", "openai")
+
+    if provider_type == "anthropic":
+        return AnthropicProvider(api_key, model)
     else:
-        provider = OpenAIProvider("not-needed", f"{OLLAMA_URL}/v1", OLLAMA_MODEL)
-        logger.info(f"Using Ollama: {OLLAMA_MODEL}")
-    
-    return provider
+        return OpenAIProvider(api_key, base_url, model)
 
 
 def create_system_prompt() -> str:
@@ -323,11 +330,12 @@ class ChatResponse(BaseModel):
 @app.on_event("startup")
 async def startup():
     from tools import register_all_tools
+
     tools = register_all_tools()
-    
+
     for tool_def in tools.list_tools():
         logger.info(f"Tool available: {tool_def['name']}")
-    
+
     logger.info(f"Brain service started with {len(tools.list_tools())} tools")
 
 
@@ -338,12 +346,13 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    p = get_provider()
+    settings = await get_llm_settings()
     return {
         "service": "Nanobot Brain Service",
         "version": "2.0.0",
-        "model": p.model if hasattr(p, 'model') else "unknown",
-        "tools": len(registry.list_tools())
+        "model": settings.get("model", "unknown"),
+        "provider": settings.get("provider", "unknown"),
+        "tools": len(registry.list_tools()),
     }
 
 
@@ -355,53 +364,61 @@ async def list_tools():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     conv_id = request.conversation_id or str(uuid.uuid4())
-    
+
     memory.add(conv_id, "user", request.message)
     history = memory.get_history(conv_id)
-    
+
     messages = [{"role": "system", "content": create_system_prompt()}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
-    
+
     tools = registry.list_tools()
-    p = get_provider()
-    
+    p = await get_provider()
+
     try:
         response = await p.chat(messages, tools)
-        
+
         if "choices" in response:
             choice = response["choices"][0]
             assistant_message = choice["message"]
-            
+
             if "tool_calls" in assistant_message:
                 tool_calls = assistant_message["tool_calls"]
-                memory.add(conv_id, "assistant", assistant_message.get("content", "") or "Using tools...")
-                
+                memory.add(
+                    conv_id,
+                    "assistant",
+                    assistant_message.get("content", "") or "Using tools...",
+                )
+
                 tool_results = []
                 tools_used = []
-                
+
                 for tc in tool_calls:
                     func = tc["function"]
                     tool_name = func["name"]
-                    args = json.loads(func["arguments"]) if isinstance(func["arguments"], str) else func["arguments"]
-                    
+                    args = (
+                        json.loads(func["arguments"])
+                        if isinstance(func["arguments"], str)
+                        else func["arguments"]
+                    )
+
                     tools_used.append(tool_name)
                     result = await registry.execute(tool_name, args)
-                    tool_results.append({
-                        "tool_call_id": tc["id"],
-                        "name": tool_name,
-                        "result": result
-                    })
-                
+                    tool_results.append(
+                        {"tool_call_id": tc["id"], "name": tool_name, "result": result}
+                    )
+
                 messages.append(assistant_message)
                 for tr in tool_results:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tr["tool_call_id"],
-                        "name": tr["name"],
-                        "content": str(tr["result"])
-                    })
-                
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tr["tool_call_id"],
+                            "name": tr["name"],
+                            "content": str(tr["result"]),
+                        }
+                    )
+
                 follow_up = await p.chat(messages, tools)
                 if "choices" in follow_up:
                     final_content = follow_up["choices"][0]["message"]["content"]
@@ -411,23 +428,29 @@ async def chat(request: ChatRequest):
                 final_content = assistant_message.get("content", "I'm ready to help!")
         else:
             final_content = response.get("content", "I'm ready to help!")
-        
-        memory.add(conv_id, "assistant", final_content, tools_used if 'tools_used' in dir() else [])
-        
+
+        memory.add(
+            conv_id,
+            "assistant",
+            final_content,
+            tools_used if "tools_used" in dir() else [],
+        )
+
+        settings = await get_llm_settings()
         return ChatResponse(
             response=final_content or "Completed",
             conversation_id=conv_id,
-            tools_used=tools_used if 'tools_used' in dir() else [],
-            model=p.model if hasattr(p, 'model') else "unknown"
+            tools_used=tools_used if "tools_used" in dir() else [],
+            model=settings.get("model", "unknown"),
         )
-        
+
     except Exception as e:
         logger.error(f"Chat error: {e}")
         return ChatResponse(
             response=f"I encountered an error: {str(e)}",
             conversation_id=conv_id,
             tools_used=[],
-            model="error"
+            model="error",
         )
 
 
@@ -435,16 +458,16 @@ async def chat(request: ChatRequest):
 async def chat_stream(request: ChatRequest):
     """Streaming chat endpoint"""
     conv_id = request.conversation_id or str(uuid.uuid4())
-    
+
     memory.add(conv_id, "user", request.message)
     history = memory.get_history(conv_id)
-    
+
     messages = [{"role": "system", "content": create_system_prompt()}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
-    
-    p = get_provider()
-    
+
+    p = await get_provider()
+
     async def generate():
         try:
             async for chunk in p.chat_stream(messages, registry.list_tools()):
@@ -460,7 +483,7 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
-    
+
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
@@ -479,7 +502,7 @@ async def clear_memory(conversation_id: str):
 async def run_pipeline(task: str, target: str = None, library: str = None):
     """Run a predefined pipeline"""
     job_id = str(uuid.uuid4())
-    
+
     if task == "virtual_screening":
         plan = {
             "steps": [
@@ -491,10 +514,11 @@ async def run_pipeline(task: str, target: str = None, library: str = None):
         }
     else:
         plan = {"error": f"Unknown pipeline: {task}"}
-    
+
     return {"job_id": job_id, "plan": plan}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

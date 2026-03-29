@@ -89,14 +89,12 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3
-      - AI_MODE=autonomous
-      - DOCKING_SERVICE_URL=http://docking-service:8002
-      - RDKIT_SERVICE_URL=http://rdkit-service:8003
-      - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
+        - REDIS_URL=redis://redis:6379
+        - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
+        - AI_MODE=autonomous
+        - DOCKING_SERVICE_URL=http://docking-service:8002
+        - RDKIT_SERVICE_URL=http://rdkit-service:8003
+        - PHARMACOPHORE_SERVICE_URL=http://pharmacophore-service:8004
     depends_on:
       redis:
         condition: service_healthy
@@ -337,31 +335,7 @@ services:
     networks:
       - docking-network
 
-  # =========================================================
-  # Ollama - Optional AI Assistant (GPU accelerated)
-  # =========================================================
-  ollama:
-    image: ollama/ollama:latest
-    container_name: docking-ollama
-    hostname: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_MODELS=/models
-    volumes:
-      - ollama-models:/models
-    # Uncomment below to enable GPU (requires NVIDIA GPU + nvidia-docker)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    networks:
-      - docking-network
+
 
 # =========================================================
 # Volumes - Persistent data
@@ -374,8 +348,6 @@ volumes:
   redis-data:
     driver: local
   postgres-data:
-    driver: local
-  ollama-models:
     driver: local
   vina-cache:
     driver: local

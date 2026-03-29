@@ -68,13 +68,20 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom section */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-gray-800 space-y-1">
         <NavLink
           to="/settings"
           className="flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors text-sm"
         >
           <span>⚙</span>
-          Settings
+          AI Settings
+        </NavLink>
+        <NavLink
+          to="/settings"
+          className="flex items-center gap-3 px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors text-sm"
+        >
+          <span>🔧</span>
+          Preferences
         </NavLink>
       </div>
     </aside>

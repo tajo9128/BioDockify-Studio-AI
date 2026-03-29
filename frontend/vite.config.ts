@@ -70,6 +70,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/llm': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -73,10 +73,10 @@ export function Dashboard() {
               <Badge variant="success">Running</Badge>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border-light">
-              <span className="text-text-secondary">Ollama AI</span>
-              <Badge variant={health?.ollama?.status === 'available' ? 'success' : 'default'}>
-                {health?.ollama?.status === 'available' ? 'Available' : 'Offline'}
-              </Badge>
+              <span className="text-text-secondary">AI Assistant</span>
+              <Link to="/settings">
+                <Badge variant="info">Configure</Badge>
+              </Link>
             </div>
             <div className="flex items-center justify-between py-2">
               <span className="text-text-secondary">GPU Acceleration</span>
