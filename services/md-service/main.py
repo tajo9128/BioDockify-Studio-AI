@@ -57,6 +57,37 @@ except Exception:
 notifications = NotificationManager()
 
 
+def _get_best_platform():
+    """Get the best available OpenMM platform (GPU if available, else CPU)"""
+    import openmm as mm
+    
+    # Check for GPU platforms in order of preference
+    gpu_platforms = ["CUDA", "OpenCL", "HIP"]
+    
+    for platform_name in gpu_platforms:
+        try:
+            platform = mm.Platform.getPlatformByName(platform_name)
+            # Verify platform works by checking it has at least one GPU
+            props = platform.getProperties()
+            if platform_name == "CUDA":
+                if "CudaDeviceIndex" in props or "CudaPrecision" in props:
+                    logger.info(f"Using GPU platform: {platform_name}")
+                    return platform
+            elif platform_name == "OpenCL":
+                if "OpenCLDeviceIndex" in props or "OpenCLPlatformIndex" in props:
+                    logger.info(f"Using GPU platform: {platform_name}")
+                    return platform
+            elif platform_name == "HIP":
+                if "HipDeviceIndex" in props:
+                    logger.info(f"Using GPU platform: {platform_name}")
+                    return platform
+        except Exception:
+            pass
+    
+    logger.info("GPU not available, using CPU platform")
+    return _get_best_platform()
+
+
 def _set_job_status(
     job_id: str,
     status: str,
@@ -133,7 +164,7 @@ async def lifespan(app: FastAPI):
     logger.info("MD Service starting up...")
     logger.info(f"Redis available: {redis_available}")
     logger.info("MD-Suite Nanobot integration: ACTIVE")
-    logger.info("Engine: OpenMM (CPU-based, low-end PC friendly)")
+    logger.info("Engine: OpenMM (Auto-detect: GPU preferred, CPU fallback)")
     logger.info("=" * 60)
     yield
     logger.info("MD Service shutting down...")
@@ -171,6 +202,46 @@ def health():
         ],
         "timestamp": datetime.now().isoformat(),
     }
+
+
+@app.get("/gpu/status")
+def gpu_status():
+    """Check GPU availability for MD simulations"""
+    try:
+        import openmm as mm
+        
+        available_platforms = []
+        gpu_platforms = []
+        
+        for platform in mm.Platform.getPlatforms():
+            name = platform.getName()
+            available_platforms.append(name)
+            
+            if name in ["CUDA", "OpenCL", "HIP"]:
+                props = platform.getProperties()
+                gpu_info = {"name": name, "properties": props}
+                
+                # Try to get device info
+                if name == "CUDA":
+                    gpu_info["device_count"] = props.get("CudaDeviceIndex", "Unknown")
+                elif name == "OpenCL":
+                    gpu_info["device_count"] = props.get("OpenCLDeviceIndex", "Unknown")
+                    
+                gpu_platforms.append(gpu_info)
+        
+        return {
+            "gpu_available": len(gpu_platforms) > 0,
+            "gpu_platforms": gpu_platforms,
+            "all_platforms": available_platforms,
+            "recommended_platform": gpu_platforms[0]["name"] if gpu_platforms else "CPU",
+            "message": "GPU detected!" if gpu_platforms else "No GPU found, using CPU"
+        }
+    except Exception as e:
+        return {
+            "gpu_available": False,
+            "error": str(e),
+            "recommended_platform": "CPU"
+        }
 
 
 @app.get("/")
@@ -268,7 +339,7 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
         )
         integrator.setConstraintTolerance(1e-5)
 
-        platform = mm.Platform.getPlatformByName("CPU")
+        platform = _get_best_platform()
         context = mm.Context(system, integrator, platform)
         context.setPositions(modeller.positions)
 
@@ -711,7 +782,7 @@ def _run_minimize(job_id: str, pdb_content: str):
         integrator = mm.LangevinIntegrator(
             300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picosecond
         )
-        context = mm.Context(system, integrator, mm.Platform.getPlatformByName("CPU"))
+        context = mm.Context(system, integrator, _get_best_platform())
         context.setPositions(modeller.positions)
         mm.LocalEnergyMinimizer.minimize(context, maxIterations=1000)
         state = context.getState(getPositions=True)

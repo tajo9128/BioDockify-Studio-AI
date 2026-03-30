@@ -43,6 +43,15 @@ RUN pip install --no-cache-dir \
     biopython \
     scipy
 
+# Install OpenMM CUDA plugin for GPU acceleration
+# Note: For NVIDIA GPU, ensure nvidia-docker is installed on host
+RUN pip install --no-cache-dir openmm-cuda
+
+# Add GPU detection info
+RUN echo '#!/bin/bash' > /usr/local/bin/check_gpu.sh && \
+    echo 'python3 -c "import openmm as mm; platforms = [p.getName() for p in mm.Platform.getPlatforms()]; print(\"Available platforms:\", platforms)"' >> /usr/local/bin/check_gpu.sh && \
+    chmod +x /usr/local/bin/check_gpu.sh
+
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 WORKDIR /app
