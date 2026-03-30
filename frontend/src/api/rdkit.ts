@@ -83,6 +83,14 @@ export async function prepareLigand(
   return data
 }
 
+export async function smilesToSDF(smiles: string, name: string = 'molecule'): Promise<{ sdf_content: string; pdb_path?: string }> {
+  const { data } = await apiClient.post('/rdkit/smiles-to-3d', {
+    smiles,
+    name,
+  })
+  return data
+}
+
 export async function detectInteractions(
   receptorPdbContent: string,
   ligandPdbContent: string

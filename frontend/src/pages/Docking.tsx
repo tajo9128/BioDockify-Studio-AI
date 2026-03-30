@@ -4,7 +4,7 @@ import { Card, Button, Input, ProgressBar, Badge, Tabs, TabPanel } from '@/compo
 import { useDockingStream } from '@/hooks'
 import { startDocking, cancelDocking } from '@/api/docking'
 import { uploadFile, downloadFile } from '@/api/upload'
-import { prepareProtein, prepareReceptorPDBQT, prepareLigand } from '@/api/rdkit'
+import { prepareProtein, prepareReceptorPDBQT, prepareLigand, smilesToSDF } from '@/api/rdkit'
 import type { DockingConfig } from '@/lib/types'
 
 const SAMPLE_RECEPTOR_PDB = `HEADER    IMMUNE SYSTEM                           15-APR-98   1HIA
@@ -68,6 +68,7 @@ export function Docking() {
   const [activeTab, setActiveTab] = useState('input')
   const [receptorFile, setReceptorFile] = useState<File | null>(null)
   const [ligandFiles, setLigandFiles] = useState<File[]>([])
+  const [ligandFile, setLigandFile] = useState<File | null>(null)
   const [receptorName, setReceptorName] = useState('')
   const [ligandName, setLigandName] = useState('')
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -125,6 +126,7 @@ export function Docking() {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
     setLigandFiles(files)
+    setLigandFile(files[0])
     setLigandName(`${files.length} files selected`)
     setPreparedLigandPath(null)
     setUploadError(null)
@@ -193,7 +195,36 @@ export function Docking() {
     setPreparingLigand(true)
     setUploadError(null)
     try {
-      const content = await downloadFile(ligandFiles[0])
+      const currentLigandFile = ligandFile || ligandFiles[0]
+      
+      if (currentLigandFile.name.toLowerCase().endsWith('.smi')) {
+        const content = await downloadFile(currentLigandFile)
+        const smiles = content.trim().split('\n')[0]
+        
+        const sdfResult = await smilesToSDF(smiles, currentLigandFile.name)
+        
+        if (sdfResult.sdf_content) {
+          const sdfBlob = new Blob([sdfResult.sdf_content], { type: 'chemical/x-mdl-sdfile' })
+          const sdfFile = new File([sdfBlob], currentLigandFile.name.replace(/\.smi$/i, '.sdf'), { type: 'chemical/x-mdl-sdfile' })
+          setLigandFile(sdfFile)
+          
+          const sdfContent = await downloadFile(sdfFile)
+          const pdbContent = typeof sdfContent === 'string' ? sdfContent : sdfContent.content || sdfContent
+          const prepResult = await prepareLigand(pdbContent as string, sdfFile.name)
+          if (prepResult.success && prepResult.pdbqt_path) {
+            setPreparedLigandPath(prepResult.pdbqt_path)
+          } else {
+            throw new Error(prepResult.message || 'Ligand preparation failed')
+          }
+        } else {
+          throw new Error('Failed to convert SMILES to SDF format')
+        }
+        setPreparingLigand(false)
+        return
+      }
+      
+      setLigandFile(currentLigandFile)
+      const content = await downloadFile(currentLigandFile)
       const pdbContent = typeof content === 'string' ? content : content.content || content
       const prepResult = await prepareLigand(pdbContent as string, ligandFiles[0].name)
       if (prepResult.success && prepResult.pdbqt_path) {
