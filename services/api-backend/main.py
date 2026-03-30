@@ -15,6 +15,7 @@ from datetime import datetime
 from fastapi import (
     FastAPI,
     HTTPException,
+    Request,
     UploadFile,
     File,
     BackgroundTasks,
@@ -29,6 +30,7 @@ import httpx
 
 from db import engine, get_db, Base
 from models import Job, MDResult, UserProfile, MemoryEntry, ConversationHistory
+import functools
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
