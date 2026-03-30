@@ -125,9 +125,8 @@ def register_all_tools():
     from tools.analysis import (
         AnalyzeInteractionsTool,
         PredictBindingTool,
-        PredictADMETTool,
-        SuggestOptimizationTool,
     )
+    from tools.rdkit import PredictADMETTool, SuggestOptimizationTool
 
     registry = ToolRegistry()
 

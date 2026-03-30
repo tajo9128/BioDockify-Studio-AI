@@ -198,8 +198,8 @@ export function Docking() {
       const currentLigandFile = ligandFile || ligandFiles[0]
       
       if (currentLigandFile.name.toLowerCase().endsWith('.smi')) {
-        const content = await downloadFile(currentLigandFile)
-        const smiles = content.trim().split('\n')[0]
+        const smilesText = await currentLigandFile.text()
+        const smiles = smilesText.trim().split('\n')[0]
         
         const sdfResult = await smilesToSDF(smiles, currentLigandFile.name)
         
@@ -219,9 +219,8 @@ export function Docking() {
       }
       
       setLigandFile(currentLigandFile)
-      const content = await downloadFile(currentLigandFile)
-      const pdbContent = typeof content === 'string' ? content : content.content || content
-      const prepResult = await prepareLigand(pdbContent as string, ligandFiles[0].name)
+      const pdbContent = await currentLigandFile.text()
+      const prepResult = await prepareLigand(pdbContent, ligandFiles[0].name)
       if (prepResult.success && prepResult.pdbqt_path) {
         setPreparedLigandPath(prepResult.pdbqt_path)
       } else {
@@ -264,8 +263,13 @@ export function Docking() {
         receptorPath = uploadResult.path
       }
       
-      const ligandUploadResult = await uploadFile(ligandToUse)
-      const ligandPath = ligandUploadResult.path
+      let ligandPath: string
+      if (typeof ligandToUse === 'string') {
+        ligandPath = ligandToUse
+      } else {
+        const ligandUploadResult = await uploadFile(ligandToUse)
+        ligandPath = ligandUploadResult.path
+      }
 
       const result = await startDocking(receptorPath, ligandPath, {
         center_x: config.center_x,

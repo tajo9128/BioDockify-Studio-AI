@@ -571,3 +571,20 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Optimized Docker image size using multi-stage builds.
 - Improved error handling with distinct exception types for file and permission errors.
+
+## [2.2.1] - 2026-03-30
+
+### Fixed
+
+#### Core Docking Pipeline
+- Fixed nginx proxy_pass trailing slash causing 405 errors on rdkit endpoints
+- Added ligand preparation to frontend docking workflow
+- Added cancel endpoint for docking jobs
+- Fixed consensus mode to handle missing GNINA gracefully
+- Added SMILES ligand support with auto-conversion to SDF
+- Fixed missing Python imports (functools, Request) in API backend
+- Added Redis persistence for LLM settings
+- Added optional API key authentication middleware
+
+### Changed
+- Database schema alignment: MemoryEntry and ConversationHistory use metadata column

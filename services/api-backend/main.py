@@ -1219,7 +1219,7 @@ def add_memory_entry(request: MemoryEntryRequest, db: Session = Depends(get_db))
             if request.tags is not None:
                 existing.tags = request.tags
             if request.metadata is not None:
-                existing.metadata = request.metadata
+                existing.meta_data = request.metadata
         else:
             entry = MemoryEntry(
                 user_id=request.user_id,
@@ -1228,7 +1228,7 @@ def add_memory_entry(request: MemoryEntryRequest, db: Session = Depends(get_db))
                 value=request.value,
                 confidence=request.confidence,
                 tags=request.tags or [],
-                metadata=request.metadata or {},
+                meta_data=request.metadata or {},
             )
             db.add(entry)
         db.commit()
@@ -1257,7 +1257,7 @@ def get_all_memory(
                 "value": e.value,
                 "confidence": e.confidence,
                 "tags": e.tags,
-                "metadata": e.metadata,
+                "metadata": e.meta_data,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in entries
@@ -1299,7 +1299,7 @@ def search_memory(
                 "value": e.value,
                 "confidence": e.confidence,
                 "tags": e.tags,
-                "metadata": e.metadata,
+                "metadata": e.meta_data,
             }
             for e in entries
         ],
@@ -1335,7 +1335,7 @@ def add_conversation_entry(
             user_id=request.user_id,
             role=request.role,
             content=request.content,
-            metadata=request.metadata or {},
+            meta_data=request.metadata or {},
         )
         db.add(entry)
         db.commit()
@@ -1365,7 +1365,7 @@ def get_conversation_history(
                 "id": e.id,
                 "role": e.role,
                 "content": e.content,
-                "metadata": e.metadata,
+                "metadata": e.meta_data,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in entries
