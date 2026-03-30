@@ -1,0 +1,338 @@
+  1|import { useState, useRef, useEffect } from 'react'
+  2|import { Card, Button, Badge } from '@/components/ui'
+  3|import { sendChat, getChatStatus } from '@/api/chat'
+  4|
+  5|interface Message {
+  6|  id: string
+  7|  role: 'user' | 'assistant'
+  8|  content: string
+  9|  timestamp: Date
+ 10|  isStreaming?: boolean
+ 11|  toolsUsed?: string[]
+ 12|}
+ 13|
+ 14|const SUGGESTED_PROMPTS = [
+ 15|  { label: '? Dock aspirin to 1HIA', prompt: 'Dock aspirin (CC(=O)Oc1ccccc1C(=O)O) against receptor 1HIA and show me the binding affinity' },
+ 16|  { label: '? Analyze drug-likeness', prompt: "Is aspirin drug-like according to Lipinski's Rule of 5? Calculate its properties." },
+ 17|  { label: '? Fetch a protein', prompt: 'Fetch protein structure 1ABC from PDB and tell me about it' },
+ 18|  { label: '? Design variants', prompt: 'Generate 5 molecular variants of aspirin and suggest which might have better binding' },
+ 19|]
+ 20|
+ 21|const EXAMPLE_WORKFLOWS = [
+ 22|  {
+ 23|    title: 'Virtual Screening Pipeline',
+ 24|    steps: ['Fetch receptor ? Generate pharmacophore ? Screen library ? Dock top hits ? Analyze interactions'],
+ 25|    icon: '?',
+ 26|  },
+ 27|  {
+ 28|    title: 'Lead Optimization',
+ 29|    steps: ['Dock lead ? Analyze interactions ? Suggest modifications ? Generate variants ? Redock'],
+ 30|    icon: '?',
+ 31|  },
+ 32|  {
+ 33|    title: 'ADMET Prediction',
+ 34|    steps: ['Calculate properties ? Predict absorption ? Assess toxicity ? Suggest optimization'],
+ 35|    icon: '?',
+ 36|  },
+ 37|]
+ 38|
+ 39|export function AIAssistant() {
+ 40|  const [messages, setMessages] = useState<Message[]>([])
+ 41|  const [input, setInput] = useState('')
+ 42|  const [loading, setLoading] = useState(false)
+ 43|  const [error, setError] = useState<string | null>(null)
+ 44|  const [status, setStatus] = useState<{ provider: string; available: boolean } | null>(null)
+ 45|  const [showHelp, setShowHelp] = useState(false)
+ 46|  const messagesEndRef = useRef<HTMLDivElement>(null)
+ 47|  const inputRef = useRef<HTMLInputElement>(null)
+ 48|
+ 49|  const scrollToBottom = () => {
+ 50|    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+ 51|  }
+ 52|
+ 53|  useEffect(() => {
+ 54|    scrollToBottom()
+ 55|  }, [messages])
+ 56|
+ 57|  const handleSend = async () => {
+ 58|    if (!input.trim() || loading) return
+ 59|
+ 60|    const userMessage: Message = {
+ 61|      id: Date.now().toString(),
+ 62|      role: 'user',
+ 63|      content: input.trim(),
+ 64|      timestamp: new Date(),
+ 65|    }
+ 66|
+ 67|    setMessages((prev) => [...prev, userMessage])
+ 68|    setInput('')
+ 69|    setLoading(true)
+ 70|    setError(null)
+ 71|
+ 72|    try {
+ 73|      const response = await sendChat(userMessage.content)
+ 74|      const assistantMessage: Message = {
+ 75|        id: (Date.now() + 1).toString(),
+ 76|        role: 'assistant',
+ 77|        content: response.response || 'AI returned no response. Check your LLM settings.',
+ 78|        timestamp: new Date(),
+ 79|        toolsUsed: response.tools_used,
+ 80|      }
+ 81|      setMessages((prev) => [...prev, assistantMessage])
+ 82|      setStatus({ provider: response.provider || 'unknown', available: response.available !== false })
+ 83|    } catch (err: any) {
+ 84|      const msg = err?.response?.data?.detail || err?.message || 'Failed to connect to AI assistant. Check Settings.'
+ 85|      setError(msg)
+ 86|      setMessages((prev) => [...prev, {
+ 87|        id: (Date.now() + 1).toString(),
+ 88|        role: 'assistant',
+ 89|        content: `?? **Error**: ${msg}\n\nPlease check:\n1. Is the LLM service running in Settings?\n2. Is your API key valid?\n3. Is Ollama running locally (if using local model)?`,
+ 90|        timestamp: new Date(),
+ 91|      }])
+ 92|    } finally {
+ 93|      setLoading(false)
+ 94|    }
+ 95|  }
+ 96|
+ 97|  const handleStatus = async () => {
+ 98|    try {
+ 99|      const s = await getChatStatus()
+100|      setStatus({ provider: s.provider, available: s.ollama_available })
+101|    } catch (err) {
+102|      console.error('Status check failed:', err)
+103|    }
+104|  }
+105|
+106|  const clearMessages = () => setMessages([])
+107|
+108|  const handleSuggestedPrompt = (prompt: string) => {
+109|    setInput(prompt)
+110|    inputRef.current?.focus()
+111|  }
+112|
+113|  const formatContent = (content: string): string => {
+114|    let formatted = content
+115|    formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs font-mono">$1</code>')
+116|    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>')
+117|    formatted = formatted.replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-3 mb-1">$1</h3>')
+118|    formatted = formatted.replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-4 mb-2">$1</h2>')
+119|    formatted = formatted.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>')
+120|    formatted = formatted.replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
+121|    formatted = formatted.replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
+122|    return formatted
+123|  }
+124|
+125|  return (
+126|    <div className="p-6 h-full flex flex-col">
+127|      {/* Header */}
+128|      <div className="flex items-center justify-between mb-4">
+129|        <div className="flex items-center gap-3">
+130|          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white text-xl">
+131|            ?
+132|          </div>
+133|          <div>
+134|            <h1 className="text-2xl font-bold text-text-primary">BioDockify AI</h1>
+135|            <p className="text-xs text-text-secondary">
+136|              AI Drug Discovery Assistant {status?.provider ? `? ${status.provider}` : ''}
+137|            </p>
+138|          </div>
+139|        </div>
+140|        <div className="flex gap-2">
+141|          <Button variant="outline" size="sm" onClick={() => setShowHelp(!showHelp)}>
+142|            {showHelp ? 'Hide Help' : 'How to Use'}
+143|          </Button>
+144|          <Button variant="outline" size="sm" onClick={handleStatus}>
+145|            Status
+146|          </Button>
+147|          <Button variant="outline" size="sm" onClick={clearMessages}>
+148|            Clear
+149|          </Button>
+150|        </div>
+151|      </div>
+152|
+153|      {/* Help Panel */}
+154|      {showHelp && (
+155|        <Card padding="md" className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200">
+156|          <h3 className="font-bold text-text-primary mb-2">? Quick Start with BioDockify AI</h3>
+157|          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+158|            {EXAMPLE_WORKFLOWS.map((wf) => (
+159|              <div key={wf.title} className="bg-white/60 rounded-lg p-3">
+160|                <div className="flex items-center gap-2 mb-1">
+161|                  <span className="text-xl">{wf.icon}</span>
+162|                  <span className="font-semibold text-sm">{wf.title}</span>
+163|                </div>
+164|                <p className="text-xs text-text-secondary">{wf.steps}</p>
+165|              </div>
+166|            ))}
+167|          </div>
+168|          <div className="mt-3 pt-3 border-t border-blue-200">
+169|            <p className="text-xs text-text-secondary">
+170|              <strong>Try asking:</strong> "Fetch 1HIA from PDB" ? "Is this molecule drug-like?" ? "Suggest optimizations for better binding" ? "Run a virtual screen"
+171|            </p>
+172|          </div>
+173|        </Card>
+174|      )}
+175|
+176|      {/* Error banner */}
+177|      {error && (
+178|        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+179|          <span>??</span>
+180|          <span>{error}</span>
+181|        </div>
+182|      )}
+183|
+184|      {/* Status indicator */}
+185|      {status && (
+186|        <div className="mb-4 p-3 bg-surface-secondary rounded-lg flex items-center gap-3">
+187|          <span className={`w-3 h-3 rounded-full ${status.available ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+188|          <span className="text-sm text-text-secondary">
+189|            {status.available 
+190|              ? `Connected to ${status.provider === 'ollama' ? 'Ollama (Local)' : status.provider}` 
+191|              : 'Offline mode - Configure LLM in Settings'}
+192|          </span>
+193|          <Badge variant={status.available ? 'success' : 'warning'}>
+194|            {status.available ? 'Online' : 'Offline'}
+195|          </Badge>
+196|        </div>
+197|      )}
+198|
+199|      {/* Messages */}
+200|      <Card className="flex-1 flex flex-col overflow-hidden" padding="none">
+201|        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+202|          {messages.length === 0 ? (
+203|            <div className="text-center py-8">
+204|              <div className="text-6xl mb-3">?</div>
+205|              <h2 className="text-xl font-bold text-text-primary mb-2">Welcome to BioDockify AI</h2>
+206|              <p className="text-text-secondary mb-6 max-w-md mx-auto">
+207|                Your AI-powered drug discovery assistant. I can help with molecular docking, 
+208|                property prediction, lead optimization, and more!
+209|              </p>
+210|              
+211|              <div className="space-y-2">
+212|                <p className="text-sm font-semibold text-text-tertiary">Try these examples:</p>
+213|                <div className="flex flex-wrap gap-2 justify-center">
+214|                  {SUGGESTED_PROMPTS.map((sp) => (
+215|                    <button
+216|                      key={sp.label}
+217|                      onClick={() => handleSuggestedPrompt(sp.prompt)}
+218|                      className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-full text-xs font-medium transition-colors"
+219|                    >
+220|                      {sp.label}
+221|                    </button>
+222|                  ))}
+223|                </div>
+224|              </div>
+225|
+226|              <div className="mt-8 grid grid-cols-2 gap-4 max-w-lg mx-auto text-left">
+227|                <div className="bg-surface-secondary rounded-lg p-3">
+228|                  <div className="font-semibold text-sm mb-1">? Docking</div>
+229|                  <p className="text-xs text-text-tertiary">Run Vina/GNINA docking simulations</p>
+230|                </div>
+231|                <div className="bg-surface-secondary rounded-lg p-3">
+232|                  <div className="font-semibold text-sm mb-1">? Properties</div>
+233|                  <p className="text-xs text-text-tertiary">Calculate MW, LogP, TPSA, drug-likeness</p>
+234|                </div>
+235|                <div className="bg-surface-secondary rounded-lg p-3">
+236|                  <div className="font-semibold text-sm mb-1">? ADMET</div>
+237|                  <p className="text-xs text-text-tertiary">Predict absorption and toxicity</p>
+238|                </div>
+239|                <div className="bg-surface-secondary rounded-lg p-3">
+240|                  <div className="font-semibold text-sm mb-1">? Optimization</div>
+241|                  <p className="text-xs text-text-tertiary">Suggest lead compound improvements</p>
+242|                </div>
+243|              </div>
+244|            </div>
+245|          ) : (
+246|            messages.map((msg) => (
+247|              <div
+248|                key={msg.id}
+249|                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+250|              >
+251|                <div
+252|                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+253|                    msg.role === 'user'
+254|                      ? 'bg-gradient-to-r from-primary to-secondary text-white'
+255|                      : 'bg-surface-secondary text-text-primary'
+256|                  }`}
+257|                >
+258|                  {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+259|                    <div className="flex items-center gap-1 mb-2">
+260|                      <span className="text-xs opacity-60">Using tools:</span>
+261|                      {msg.toolsUsed.map((tool) => (
+262|                        <Badge key={tool} variant="info">
+263|                          {tool}
+264|                        </Badge>
+265|                      ))}
+266|                    </div>
+267|                  )}
+268|                  <div 
+269|                    className="text-sm whitespace-pre-wrap prose prose-sm max-w-none"
+270|                    dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }}
+271|                  />
+272|                  <p
+273|                    className={`text-xs mt-2 ${
+274|                      msg.role === 'user' ? 'text-white/60' : 'text-text-tertiary'
+275|                    }`}
+276|                  >
+277|                    {msg.timestamp.toLocaleTimeString()}
+278|                  </p>
+279|                </div>
+280|              </div>
+281|            ))
+282|          )}
+283|
+284|          {loading && (
+285|            <div className="flex justify-start">
+286|              <div className="bg-surface-secondary rounded-2xl px-4 py-3">
+287|                <div className="flex items-center gap-2">
+288|                  <span className="text-2xl animate-bounce">?</span>
+289|                  <div className="flex gap-1">
+290|                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+291|                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+292|                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+293|                  </div>
+294|                </div>
+295|                <p className="text-xs text-text-tertiary mt-1">BioDockify AI is thinking...</p>
+296|              </div>
+297|            </div>
+298|          )}
+299|
+300|          <div ref={messagesEndRef} />
+301|        </div>
+302|
+303|        {/* Input */}
+304|        <div className="p-4 border-t border-border-light bg-gradient-to-r from-surface-secondary to-transparent">
+305|          <div className="flex gap-3">
+306|            <input
+307|              ref={inputRef}
+308|              type="text"
+309|              value={input}
+310|              onChange={(e) => setInput(e.target.value)}
+311|              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+312|              placeholder="Ask about molecular docking, drug-likeness, ADMET, lead optimization..."
+313|              className="flex-1 px-4 py-3 bg-white border border-border-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+314|              disabled={loading}
+315|            />
+316|            <Button 
+317|              onClick={handleSend} 
+318|              disabled={loading || !input.trim()}
+319|              className="bg-gradient-to-r from-primary to-secondary"
+320|            >
+321|              {loading ? (
+322|                <span className="flex items-center gap-2">
+323|                  <span className="animate-spin">??</span>
+324|                  Thinking
+325|                </span>
+326|              ) : (
+327|                'Send'
+328|              )}
+329|            </Button>
+330|          </div>
+331|          <p className="text-xs text-text-tertiary mt-2 text-center">
+332|            Press Enter to send, Shift+Enter for new line ? BioDockify AI uses chain-of-thought reasoning
+333|          </p>
+334|        </div>
+335|      </Card>
+336|    </div>
+337|  )
+338|}
