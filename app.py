@@ -28,6 +28,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BioDockify</title>
+    <link rel="stylesheet" href="https://unpkg.com/smiles-drawer@2.2.1/dist/smiles-drawer.min.css">
+    <script src="https://unpkg.com/smiles-drawer@2.2.1/dist/smiles-drawer.min.js"></script>
+    <script src="https://unpkg.com/ketcher-core@2.6.2/dist/ketcher-core.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e8e8e8; min-height: 100vh; }
@@ -37,6 +40,14 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .header-nav a { color: #a0a0a0; text-decoration: none; padding: 0.5rem 1rem; margin-left: 0.5rem; border-radius: 4px; }
         .header-nav a:hover, .header-nav a.active { color: #00d9ff; background: rgba(0,217,255,0.1); }
         .main { display: flex; flex: 1; }
+        .editor-container { display: grid; grid-template-columns: 1fr 300px; gap: 1rem; height: calc(100vh - 200px); }
+        .editor-main { background: #16213e; border-radius: 8px; border: 1px solid #2a2a4a; display: flex; flex-direction: column; }
+        .editor-toolbar { background: #0f3460; padding: 0.75rem; border-bottom: 1px solid #2a2a4a; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .editor-canvas { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow: auto; }
+        .editor-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+        .smiles-input { width: 100%; padding: 0.75rem; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; color: #e8e8e8; font-family: monospace; resize: vertical; min-height: 80px; }
+        .preview-canvas { background: #1a1a2e; border-radius: 4px; padding: 1rem; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+        .preview-canvas canvas { max-width: 100%; }
         .sidebar { width: 220px; background: #16213e; border-right: 1px solid #2a2a4a; padding: 1rem 0; }
         .sidebar a { color: #a0a0a0; text-decoration: none; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 0.75rem; transition: all 0.2s; border-left: 3px solid transparent; }
         .sidebar a:hover { background: rgba(0,217,255,0.05); color: #e8e8e8; }
@@ -98,6 +109,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <aside class="sidebar">
                 <a href="#" onclick="showPage('dashboard')" class="active"><span>🏠</span> Dashboard</a>
                 <a href="#" onclick="showPage('docking')"><span>🧬</span> Docking</a>
+                <a href="#" onclick="showPage('chemdraw')"><span>🖌️</span> ChemDraw</a>
                 <a href="#" onclick="showPage('md')"><span>📊</span> MD Simulation</a>
                 <a href="#" onclick="showPage('results')"><span>📈</span> Results</a>
                 <a href="#" onclick="showPage('ai')"><span>🤖</span> AI Assistant</a>
@@ -172,6 +184,58 @@ HTML_CONTENT = '''<!DOCTYPE html>
                         <div class="job-list" id="job-list">
                             ${jobs.length === 0 ? '<p style="color:#a0a0a0">No jobs yet</p>' : ''}
                             ${jobs.map(j => '<div class="job-item"><span class="job-id">Job ' + j.job_id + '</span><span class="job-status">' + j.status + '</span></div>').join('')}
+                        </div>
+                    </div>
+                </div>`,
+            chemdraw: () => `
+                <h2>ChemDraw - Structure Editor</h2><p>Draw and visualize molecular structures</p>
+                <div class="editor-container">
+                    <div class="editor-main">
+                        <div class="editor-toolbar">
+                            <button class="btn btn-secondary" onclick="clearEditor()">Clear</button>
+                            <button class="btn btn-secondary" onclick="loadSmiles()">Load SMILES</button>
+                            <button class="btn btn-primary" onclick="visualizeMolecule()">Visualize</button>
+                            <button class="btn btn-secondary" onclick="copySmiles()">Copy SMILES</button>
+                            <button class="btn btn-secondary" onclick="sendToDocking()">Send to Docking</button>
+                        </div>
+                        <div class="editor-canvas" id="editor-canvas">
+                            <div id="ketcher-container" style="width:100%;height:100%;min-height:400px;background:#fff;border-radius:4px;">
+                                <div id="sketch-hero" style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;flex-direction:column;">
+                                    <p style="font-size:3rem;margin-bottom:1rem;">🖌️</p>
+                                    <p>Enter a SMILES string or draw a structure</p>
+                                    <p style="font-size:0.875rem;margin-top:0.5rem">Supported: SMILES, PDB, SDF formats</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="editor-sidebar">
+                        <div class="card">
+                            <h3>SMILES Input</h3>
+                            <textarea class="smiles-input" id="smiles-input" placeholder="Enter SMILES (e.g., CC(=O)Oc1ccccc1C(=O)O)">CC(=O)Oc1ccccc1C(=O)O</textarea>
+                            <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="visualizeMolecule()">Visualize</button>
+                        </div>
+                        <div class="card">
+                            <h3>2D Preview</h3>
+                            <div class="preview-canvas" id="preview-canvas">
+                                <canvas id="preview-smiles-canvas"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>Structure Info</h3>
+                            <div id="mol-info" style="font-size:0.875rem;color:#a0a0a0;">
+                                <p>Atoms: -</p>
+                                <p>Bonds: -</p>
+                                <p>MW: -</p>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>Quick Examples</h3>
+                            <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                                <button class="btn btn-secondary" style="font-size:0.75rem" onclick="loadExample('Aspirin','CC(=O)Oc1ccccc1C(=O)O')">Aspirin</button>
+                                <button class="btn btn-secondary" style="font-size:0.75rem" onclick="loadExample('Caffeine','Cn1cnc2c1c(=O)n(c(=O)n2C)C')">Caffeine</button>
+                                <button class="btn btn-secondary" style="font-size:0.75rem" onclick="loadExample('Glucose','OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O')">Glucose</button>
+                                <button class="btn btn-secondary" style="font-size:0.75rem" onclick="loadExample('Benzene','c1ccccc1')">Benzene</button>
+                            </div>
                         </div>
                     </div>
                 </div>`,
@@ -302,6 +366,66 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 const data = await res.json(); messages.push({ role: 'ai', content: data.response });
             } catch(e) { messages.push({ role: 'ai', content: 'Error: Could not connect' }); }
             showPage('ai');
+        }
+        
+        function clearEditor() {
+            document.getElementById('smiles-input').value = '';
+            const canvas = document.getElementById('preview-smiles-canvas');
+            if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); }
+            document.getElementById('mol-info').innerHTML = '<p>Atoms: -</p><p>Bonds: -</p><p>MW: -</p>';
+        }
+        
+        function loadSmiles() {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (smiles) visualizeMolecule();
+        }
+        
+        function visualizeMolecule() {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (!smiles) return;
+            
+            try {
+                const canvas = document.getElementById('preview-smiles-canvas');
+                const drawer = new SmilesDrawer.Drawer({ width: 250, height: 200, bondThickness: 1.5, bondLength: 25 });
+                SmilesDrawer.parse(smiles, function(tree) {
+                    drawer.draw(tree, canvas, 'light', false);
+                    
+                    let atomCount = 0, bondCount = 0;
+                    if (tree) { atomCount = tree.atoms ? tree.atoms.length : 0; bondCount = tree.bonds ? tree.bonds.length : 0; }
+                    
+                    const mw = estimateMW(smiles);
+                    document.getElementById('mol-info').innerHTML = 
+                        '<p>Atoms: ' + atomCount + '</p><p>Bonds: ' + bondCount + '</p><p>MW: ' + mw.toFixed(2) + ' g/mol</p>';
+                });
+            } catch(e) { console.error('Visualization error:', e); }
+        }
+        
+        function estimateMW(smiles) {
+            const atomWeights = { 'C': 12.01, 'H': 1.008, 'N': 14.01, 'O': 16.00, 'S': 32.07, 'P': 30.97, 'F': 19.00, 'Cl': 35.45, 'Br': 79.90, 'I': 126.90 };
+            let mw = 0;
+            for (const [atom, weight] of Object.entries(atomWeights)) {
+                const count = (smiles.match(new RegExp(atom, 'g')) || []).length;
+                mw += count * weight;
+            }
+            return mw || 0;
+        }
+        
+        function copySmiles() {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (smiles) { navigator.clipboard.writeText(smiles); alert('SMILES copied!'); }
+        }
+        
+        function sendToDocking() {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (smiles) {
+                localStorage.setItem('docking_smiles', smiles);
+                showPage('docking');
+            }
+        }
+        
+        function loadExample(name, smiles) {
+            document.getElementById('smiles-input').value = smiles;
+            visualizeMolecule();
         }
         
         async function testProvider(provider) {
