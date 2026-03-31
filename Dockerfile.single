@@ -1,58 +1,42 @@
-# BioDockify - Single Container Dockerfile
+# BioDockify - Single Container Dockerfile (Simplified)
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl wget git libgl1 libglib2.0-0 \
     libsm6 libxext6 libxrender1 libgomp1 libpq-dev \
-    nodejs npm nginx && rm -rf /var/lib/apt/lists/*
+    nodejs npm && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir rdkit vina meeko fastapi uvicorn \
+RUN pip install --no-cache-dir rdkit vina meeko fastapi "uvicorn[standard]" \
     sqlalchemy pydantic biopython numpy scipy python-multipart \
     requests redis httpx loguru openai anthropic celery psycopg2-binary
 
+# Build frontend
 COPY frontend/package*.json ./
 RUN npm install && npm install -g vite
 COPY frontend/ ./
 RUN npm run build
 
-COPY backend/ ./backend/
+# Copy all services code
 COPY services/ ./services/
 COPY VERSION .
 
-RUN mkdir -p /app/backend/static /app/backend/storage /app/backend/uploads
-RUN cp -r /app/dist/* /app/backend/static/ 2>/dev/null || true
+# Create directories
+RUN mkdir -p /app/storage /app/uploads /app/static
 
-ENV PYTHONPATH=/app
-ENV STATIC_DIR=/app/backend/static
+# Copy built frontend to static
+RUN cp -r /app/dist/* /app/static/ 2>/dev/null || true
+
 EXPOSE 8000
 
-# Fix nginx config
-RUN echo 'server { listen 80; location / { root /app/backend/static; try_files $uri $uri/ /index.html; } location /api/ { proxy_pass http://127.0.0.1:8000; } }' > /etc/nginx/sites-available/default && \
-    ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default && \
-    rm -f /etc/nginx/sites-enabled/default.bak 2>/dev/null || true
-
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Use supervisor to run both nginx and uvicorn
-RUN pip install --no-cache-dir supervisor && \
-    echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '[program:nginx]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=/usr/sbin/nginx -g "daemon off;"' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo '[program:uvicorn]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=uvicorn backend.main:app --host 0.0.0.0 --port 8000' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf
-
-CMD ["/usr/bin/supervisord"]
+# Run the API backend (services/api-backend)
+CMD ["uvicorn", "services.api-backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
