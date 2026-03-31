@@ -1,128 +1,14 @@
-# =============================================================================
-# Docking Studio - Single Container Deployment
-# =============================================================================
-# Simplified deployment with all services in one container
-# One-command startup: docker compose -f docker-compose.single.yml up
-# Access via: http://localhost:8000
+version: '3.8'
 
 services:
-  # ---------------------------------------------------------------------------
-  # Biodockify - All-in-one container with frontend + backend
-  # ---------------------------------------------------------------------------
   biodockify:
     build:
       context: .
       dockerfile: Dockerfile.single
-    container_name: biodockify-single
-    hostname: biodockify
-    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - storage:/app/backend/storage
-      - uploads:/app/backend/uploads
-      - vina-cache:/root/.autodock_vina
-    environment:
-      - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://dockuser:dockpass@postgres:5432/docking
-      - STATIC_DIR=/app/backend/static
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 8G
-        reservations:
-          cpus: '2.0'
-          memory: 4G
-    networks:
-      - docking-network
+      - biodockify-data:/app/data
 
-  # ---------------------------------------------------------------------------
-  # Redis - Job queue broker
-  # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: docking-redis-single
-    hostname: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    networks:
-      - docking-network
-
-  # ---------------------------------------------------------------------------
-  # PostgreSQL - Metadata storage
-  # ---------------------------------------------------------------------------
-  postgres:
-    image: postgres:15-alpine
-    container_name: docking-postgres-single
-    hostname: postgres
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./services/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    environment:
-      - POSTGRES_USER=dockuser
-      - POSTGRES_PASSWORD=dockpass
-      - POSTGRES_DB=docking
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dockuser -d docking"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-    networks:
-      - docking-network
-
-# =============================================================================
-# Volumes - Persistent data
-# =============================================================================
 volumes:
-  storage:
-    driver: local
-  uploads:
-    driver: local
-  redis-data:
-    driver: local
-  postgres-data:
-    driver: local
-  vina-cache:
-    driver: local
-
-networks:
-  docking-network:
-    name: docking-network
-    driver: bridge
+  biodockify-data:

@@ -1,42 +1,19 @@
-# BioDockify - Single Container Dockerfile (Simplified)
+# BioDockify Dockerfile - Single container
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl wget git libgl1 libglib2.0-0 \
-    libsm6 libxext6 libxrender1 libgomp1 libpq-dev \
-    nodejs npm && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir rdkit vina meeko fastapi "uvicorn[standard]" \
-    sqlalchemy pydantic biopython numpy scipy python-multipart \
-    requests redis httpx loguru openai anthropic celery psycopg2-binary
+RUN pip install --no-cache-dir \
+    fastapi==0.109.2 uvicorn[standard]==0.27.1 python-multipart==0.0.9 \
+    pydantic==2.6.1 pydantic-settings==2.1.0
 
-# Build frontend
-COPY frontend/package*.json ./
-RUN npm install && npm install -g vite
-COPY frontend/ ./
-RUN npm run build
-
-# Copy all services code
-COPY services/ ./services/
-COPY VERSION .
-
-# Create directories
-RUN mkdir -p /app/storage /app/uploads /app/static
-
-# Copy built frontend to static
-RUN cp -r /app/dist/* /app/static/ 2>/dev/null || true
+COPY app.py /app/
+RUN mkdir -p /app/data/jobs
 
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run the API backend (services/api-backend)
-CMD ["uvicorn", "services.api-backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "/app/app.py"]
