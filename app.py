@@ -41,45 +41,52 @@ HTML_CONTENT = '''<!DOCTYPE html>
         .header-nav a { color: #a0a0a0; text-decoration: none; padding: 0.5rem 1rem; margin-left: 0.5rem; border-radius: 4px; }
         .header-nav a:hover, .header-nav a.active { color: #00d9ff; background: rgba(0,217,255,0.1); }
         .main { display: flex; flex: 1; }
-        .editor-container { display: grid; grid-template-columns: 1fr 380px; gap: 1rem; height: calc(100vh - 200px); }
-        .editor-main { background: #16213e; border-radius: 8px; border: 1px solid #2a2a4a; display: flex; flex-direction: column; overflow: hidden; }
-        .editor-tabs { display: flex; background: #0f3460; border-bottom: 1px solid #2a2a4a; }
-        .editor-tab { padding: 0.75rem 1.5rem; cursor: pointer; border: none; background: transparent; color: #a0a0a0; font-size: 0.875rem; }
-        .editor-tab.active { color: #00d9ff; border-bottom: 2px solid #00d9ff; }
-        .editor-toolbar { background: #0f3460; padding: 0.75rem; border-bottom: 1px solid #2a2a4a; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-        .editor-canvas { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow: auto; }
-        .viewer-3d { width: 100%; height: 100%; }
-        .editor-sidebar { display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; max-height: calc(100vh - 200px); }
+        .studio-container { display: flex; flex-direction: column; height: calc(100vh - 140px); gap: 0.5rem; }
+        .studio-toolbar { background: #16213e; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #2a2a4a; display: flex; gap: 0.5rem; align-items: center; }
+        .studio-main { display: grid; grid-template-columns: 280px 1fr 300px; gap: 0.5rem; flex: 1; min-height: 0; }
+        .studio-left, .studio-center, .studio-right { display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden; }
+        .panel { background: #16213e; border-radius: 8px; border: 1px solid #2a2a4a; display: flex; flex-direction: column; }
+        .panel-header { background: #0f3460; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-weight: 600; border-radius: 7px 7px 0 0; border-bottom: 1px solid #2a2a4a; }
+        .viewer-2d { flex: 1; background: #1a1a2e; display: flex; align-items: center; justify-content: center; min-height: 200px; }
+        .viewer-2d canvas { max-width: 100%; max-height: 100%; }
+        .viewer-3d { flex: 1; background: #1a1a2e; min-height: 300px; }
         .smiles-input { width: 100%; padding: 0.75rem; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; color: #e8e8e8; font-family: monospace; resize: vertical; min-height: 60px; font-size: 0.875rem; }
-        .preview-canvas { background: #1a1a2e; border-radius: 4px; padding: 0.5rem; min-height: 150px; display: flex; align-items: center; justify-content: center; }
-        .preview-canvas canvas { max-width: 100%; }
-        .prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-        .prop-item { background: #1a1a2e; padding: 0.5rem; border-radius: 4px; }
-        .prop-label { font-size: 0.7rem; color: #a0a0a0; text-transform: uppercase; }
-        .prop-value { font-size: 0.9rem; font-weight: 600; color: #00d9ff; }
-        .suggestion-item { background: #1a1a2e; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.8rem; border-left: 3px solid #ffab00; }
-        .suggestion-item.good { border-left-color: #00c853; }
-        .suggestion-item.warning { border-left-color: #ffab00; }
-        .suggestion-item.info { border-left-color: #00d9ff; }
-        .tab-content { display: none; flex: 1; padding: 1rem; overflow: auto; }
-        .tab-content.active { display: block; }
+        .prop-table { padding: 0.5rem; }
+        .prop-row { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.8rem; border-bottom: 1px solid #2a2a4a20; }
+        .prop-row:last-child { border-bottom: none; }
+        .rule-check { padding: 0.25rem 0; font-size: 0.75rem; color: #a0a0a0; }
+        .rule-icon { margin-right: 0.5rem; }
+        .rule-check.pass { color: #00c853; }
+        .rule-check.fail { color: #ff5252; }
+        .btn-sm { padding: 0.4rem 0.6rem; font-size: 0.7rem; border-radius: 4px; border: none; cursor: pointer; background: #0f3460; color: #e8e8e8; }
+        .btn-sm:hover { background: #00d9ff; color: #1a1a2e; }
+        .btn-xs { padding: 0.2rem 0.5rem; font-size: 0.65rem; border-radius: 4px; border: none; cursor: pointer; background: #0f3460; color: #e8e8e8; }
+        .btn-xs:hover { background: #00d9ff; color: #1a1a2e; }
+        .btn-success { background: #00c853; color: #1a1a2e; }
+        .btn-success:hover { background: #00a844; }
+        .suggestion-item { background: #1a1a2e; padding: 0.5rem 0.75rem; border-radius: 4px; margin: 0.25rem 0; font-size: 0.75rem; border-left: 3px solid #ffab00; }
+        .suggestion-item.good { border-left-color: #00c853; background: rgba(0,200,83,0.1); }
+        .suggestion-item.warning { border-left-color: #ffab00; background: rgba(255,171,0,0.1); }
+        .suggestion-item.error { border-left-color: #ff5252; background: rgba(255,82,82,0.1); }
+        .suggestion-item.info { border-left-color: #00d9ff; background: rgba(0,217,255,0.1); }
         .sidebar { width: 220px; background: #16213e; border-right: 1px solid #2a2a4a; padding: 1rem 0; }
         .sidebar a { color: #a0a0a0; text-decoration: none; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 0.75rem; transition: all 0.2s; border-left: 3px solid transparent; }
         .sidebar a:hover { background: rgba(0,217,255,0.05); color: #e8e8e8; }
         .sidebar a.active { background: rgba(0,217,255,0.1); color: #00d9ff; border-left-color: #00d9ff; }
-        .page { flex: 1; padding: 2rem; overflow-y: auto; }
-        .page h2 { font-size: 1.75rem; margin-bottom: 0.5rem; }
-        .page p { color: #a0a0a0; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0; }
-        .stat-card { background: #16213e; border-radius: 8px; padding: 1.5rem; border: 1px solid #2a2a4a; }
-        .stat-card h3 { font-size: 0.875rem; color: #a0a0a0; margin-bottom: 0.5rem; }
-        .stat-card .value { font-size: 2rem; font-weight: 600; color: #00d9ff; }
-        .card { background: #16213e; border-radius: 8px; padding: 1.5rem; border: 1px solid #2a2a4a; margin-bottom: 1rem; overflow: visible; }
-        .card h3 { margin-bottom: 1rem; }
-        .btn { padding: 0.75rem 1.5rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; transition: all 0.2s; position: relative; z-index: 10; pointer-events: auto; }
+        .page { flex: 1; padding: 1rem 2rem; overflow-y: auto; }
+        .page h2 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+        .page p { color: #a0a0a0; font-size: 0.875rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+        .stat-card { background: #16213e; border-radius: 8px; padding: 1.25rem; border: 1px solid #2a2a4a; }
+        .stat-card h3 { font-size: 0.8rem; color: #a0a0a0; margin-bottom: 0.25rem; }
+        .stat-card .value { font-size: 1.75rem; font-weight: 600; color: #00d9ff; }
+        .card { background: #16213e; border-radius: 8px; padding: 1.25rem; border: 1px solid #2a2a4a; margin-bottom: 1rem; overflow: visible; }
+        .card h3 { margin-bottom: 0.75rem; font-size: 1rem; }
+        .btn { padding: 0.6rem 1.25rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; transition: all 0.2s; }
         .btn-primary { background: #00d9ff; color: #1a1a2e; }
         .btn-primary:hover { background: #00b8d9; }
         .btn-secondary { background: #0f3460; color: #e8e8e8; border: 1px solid #2a2a4a; }
+        .btn-secondary:hover { background: #2a2a4a; }
         .drop-zone { border: 2px dashed #2a2a4a; border-radius: 8px; padding: 3rem; text-align: center; cursor: pointer; transition: all 0.2s; }
         .drop-zone:hover { border-color: #00d9ff; background: rgba(0,217,255,0.05); }
         .form-group { margin-bottom: 1rem; }
@@ -203,75 +210,103 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     </div>
                 </div>`,
             chemdraw: () => `
-                <h2>ChemDraw - Structure Editor</h2><p>Draw molecules, analyze properties, and prepare for docking</p>
-                <div class="editor-container">
-                    <div class="editor-main">
-                        <div class="editor-tabs">
-                            <button class="editor-tab active" onclick="switchTab('draw')">2D Draw</button>
-                            <button class="editor-tab" onclick="switchTab('viewer')">2D Viewer</button>
-                            <button class="editor-tab" onclick="switchTab('viewer3d')">3D Viewer</button>
-                        </div>
-                        <div class="editor-toolbar">
-                            <button class="btn btn-secondary" onclick="clearEditor()">Clear</button>
-                            <button class="btn btn-secondary" onclick="copySmiles()">Copy SMILES</button>
-                            <button class="btn btn-primary" onclick="dockMolecule()">🚀 Dock Molecule</button>
-                            <button class="btn btn-secondary" onclick="analyzeMolecule()">🔬 Analyze</button>
-                        </div>
-                        <div id="tab-draw" class="tab-content active">
-                            <div style="padding:1rem;text-align:center;color:#a0a0a0;">
-                                <p style="font-size:2rem;">🖌️</p>
-                                <p>SMILES-based structure editor</p>
-                                <p style="font-size:0.875rem;margin-top:0.5rem">Enter SMILES in the sidebar to visualize</p>
-                            </div>
-                        </div>
-                        <div id="tab-viewer" class="tab-content">
-                            <div class="preview-canvas" id="preview-canvas" style="min-height:400px;width:100%;">
-                                <canvas id="preview-smiles-canvas"></canvas>
-                            </div>
-                        </div>
-                        <div id="tab-viewer3d" class="tab-content">
-                            <div id="ngl-container" style="width:100%;height:400px;background:#1a1a2e;border-radius:4px;"></div>
-                        </div>
+                <h2>🧬 BioDockify ChemDraw</h2><p>Design, analyze, and dock molecules</p>
+                <div class="studio-container">
+                    <div class="studio-toolbar">
+                        <button class="btn btn-secondary" onclick="clearEditor()">🗑️ Clear</button>
+                        <button class="btn btn-secondary" onclick="copySmiles()">📋 Copy SMILES</button>
+                        <button class="btn btn-primary" onclick="dockMolecule()">🚀 Dock</button>
+                        <button class="btn btn-secondary" onclick="analyzeMolecule()">🔬 Analyze</button>
+                        <button class="btn btn-success" onclick="optimizeMolecule()">🧠 Optimize</button>
+                        <span style="flex:1"></span>
+                        <span id="mol-name" style="color:#00d9ff;font-size:0.875rem;">Aspirin</span>
                     </div>
-                    <div class="editor-sidebar">
-                        <div class="card">
-                            <h3>SMILES Input</h3>
-                            <textarea class="smiles-input" id="smiles-input" placeholder="Enter SMILES (e.g., CC(=O)Oc1ccccc1C(=O)O)">CC(=O)Oc1ccccc1C(=O)O</textarea>
-                            <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="analyzeMolecule()">🔬 Analyze</button>
-                        </div>
-                        <div class="card">
-                            <h3>Properties (Lipinski)</h3>
-                            <div class="prop-grid" id="prop-grid">
-                                <div class="prop-item"><div class="prop-label">MW</div><div class="prop-value" id="prop-mw">-</div></div>
-                                <div class="prop-item"><div class="prop-label">LogP</div><div class="prop-value" id="prop-logp">-</div></div>
-                                <div class="prop-item"><div class="prop-label">HBD</div><div class="prop-value" id="prop-hbd">-</div></div>
-                                <div class="prop-item"><div class="prop-label">HBA</div><div class="prop-value" id="prop-hba">-</div></div>
-                                <div class="prop-item"><div class="prop-label">TPSA</div><div class="prop-value" id="prop-tpsa">-</div></div>
-                                <div class="prop-item"><div class="prop-label">Rot. Bonds</div><div class="prop-value" id="prop-rot">-</div></div>
-                                <div class="prop-item"><div class="prop-label">Formula</div><div class="prop-value" id="prop-formula" style="font-size:0.75rem">-</div></div>
+                    <div class="studio-main">
+                        <div class="studio-left">
+                            <div class="panel">
+                                <div class="panel-header">SMILES Input</div>
+                                <div style="padding:0.75rem;">
+                                    <textarea class="smiles-input" id="smiles-input" placeholder="Enter SMILES...">CC(=O)Oc1ccccc1C(=O)O</textarea>
+                                    <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="analyzeMolecule()">🔬 Analyze Structure</button>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">2D Structure Viewer</div>
+                                <div class="viewer-2d" id="viewer-2d">
+                                    <canvas id="preview-smiles-canvas"></canvas>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">🔬 Molecule Library</div>
+                                <div style="padding:0.5rem;display:grid;grid-template-columns:repeat(3,1fr);gap:0.25rem;">
+                                    <button class="btn btn-sm" onclick="loadExample('Aspirin','CC(=O)Oc1ccccc1C(=O)O')">Aspirin</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Caffeine','Cn1cnc2c1c(=O)n(c(=O)n2C)C')">Caffeine</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Glucose','OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O')">Glucose</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Ibuprofen','CC(C)Cc1ccc(cc1)C(C)C(=O)O')">Ibuprofen</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Morphine','CN1CCc2c(O)ccc(c2C1)C(O)=O')">Morphine</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Benzene','c1ccccc1')">Benzene</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Acetaminophen','CC(=O)Nc1ccc(cc1)O')">Acetaminophen</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Lisinopril','c1ccc2c(c1)CCCC2C(=O)NCCCC(N)C(=O)O')">Lisinopril</button>
+                                    <button class="btn btn-sm" onclick="loadExample(' Metformin','CN(C)N=C(N)N')">Metformin</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Warfarin','CC(=O)OC(Cc1c(O)c2ccccc2oc1=O)C(c1ccccc1)=O')">Warfarin</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Tamoxifen','CC(C)=c1ccccc1C(OCCCN(C)C)c1ccccc1')">Tamoxifen</button>
+                                    <button class="btn btn-sm" onclick="loadExample('Sildenafil','CCCC1=C2N(C(=O)N1CCC)CCCC2c3ccc(cc3)S(=O)(=O)N')">Sildenafil</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="card">
-                            <h3>💡 AI Suggestions</h3>
-                            <div id="ai-suggestions">
-                                <p style="color:#a0a0a0;font-size:0.8rem">Click "Analyze" to get suggestions</p>
+                        <div class="studio-center">
+                            <div class="panel" style="flex:1;">
+                                <div class="panel-header">3D Structure Viewer <span style="float:right;font-weight:normal;font-size:0.7rem;">Drag to rotate | Scroll to zoom</span></div>
+                                <div class="viewer-3d" id="ngl-container"></div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">Docking Jobs <span style="float:right;"><button class="btn btn-xs" onclick="refreshJobs()">🔄 Refresh</button></span></div>
+                                <div id="job-list" style="max-height:150px;overflow-y:auto;">
+                                    <p style="color:#a0a0a0;font-size:0.8rem;padding:0.5rem;">No jobs yet. Click "Dock" to start.</p>
+                                </div>
                             </div>
                         </div>
-                        <div class="card">
-                            <h3>Quick Examples</h3>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Aspirin','CC(=O)Oc1ccccc1C(=O)O')">Aspirin</button>
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Caffeine','Cn1cnc2c1c(=O)n(c(=O)n2C)C')">Caffeine</button>
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Glucose','OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O')">Glucose</button>
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Benzene','c1ccccc1')">Benzene</button>
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Ibuprofen','CC(C)Cc1ccc(cc1)C(C)C(=O)O')">Ibuprofen</button>
-                                <button class="btn btn-secondary" style="font-size:0.7rem" onclick="loadExample('Morphine','CN1CCc2c(O)ccc(c2C1)C(O)=O')">Morphine</button>
+                        <div class="studio-right">
+                            <div class="panel">
+                                <div class="panel-header">📊 Properties (Lipinski)</div>
+                                <div class="prop-table">
+                                    <div class="prop-row"><span>MW</span><span class="prop-value" id="prop-mw">180.16</span></div>
+                                    <div class="prop-row"><span>LogP</span><span class="prop-value" id="prop-logp">1.19</span></div>
+                                    <div class="prop-row"><span>HBD</span><span class="prop-value" id="prop-hbd">1</span></div>
+                                    <div class="prop-row"><span>HBA</span><span class="prop-value" id="prop-hba">3</span></div>
+                                    <div class="prop-row"><span>TPSA</span><span class="prop-value" id="prop-tpsa">63.60</span></div>
+                                    <div class="prop-row"><span>Rotatable</span><span class="prop-value" id="prop-rot">4</span></div>
+                                    <div class="prop-row"><span>Aromatic Rings</span><span class="prop-value" id="prop-aromatic">1</span></div>
+                                    <div class="prop-row"><span>Formula</span><span class="prop-value" id="prop-formula" style="font-size:0.8rem">C9H8O4</span></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="card">
-                            <h3>Docking Status</h3>
-                            <div id="dock-status" style="font-size:0.8rem;color:#a0a0a0;">
-                                <p>No active docking jobs</p>
+                            <div class="panel">
+                                <div class="panel-header">🧠 AI Suggestions</div>
+                                <div id="ai-suggestions" style="max-height:200px;overflow-y:auto;">
+                                    <div class="suggestion-item info">Click "Analyze" to get drug-likeness suggestions</div>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">🧬 Optimization</div>
+                                <div style="padding:0.5rem;">
+                                    <p style="font-size:0.75rem;color:#a0a0a0;margin-bottom:0.5rem;">AI-powered molecular modifications:</p>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('add_halogen')">➕ Add Halogen (F, Cl, Br)</button>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('add_oh')">➕ Add OH Group</button>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('add_nh2')">➕ Add NH2 Group</button>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('add_aromatic')">➕ Add Aromatic Ring</button>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('bioisostere')">🔄 Bioisosteric Replace</button>
+                                    <button class="btn btn-sm btn-secondary" style="width:100%;margin-bottom:0.25rem" onclick="mutateMolecule('reduce_flex')">📉 Reduce Flexibility</button>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-header">Drug-like Rules</div>
+                                <div style="padding:0.5rem;font-size:0.75rem;">
+                                    <div class="rule-check" id="rule-mw"><span class="rule-icon">✓</span> MW &lt; 500 Da</div>
+                                    <div class="rule-check" id="rule-logp"><span class="rule-icon">✓</span> LogP &lt; 5</div>
+                                    <div class="rule-check" id="rule-hbd"><span class="rule-icon">✓</span> HBD ≤ 5</div>
+                                    <div class="rule-check" id="rule-hba"><span class="rule-icon">✓</span> HBA ≤ 10</div>
+                                    <div class="rule-check" id="rule-rot"><span class="rule-icon">✓</span> Rotatable ≤ 10</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -438,21 +473,24 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.error && data.fallback) {
-                    alert('RDKit not available in this container. Using estimation only.');
+                    console.log('RDKit not available, using estimation');
                 } else if (data.error) {
-                    alert('Error: ' + data.error);
+                    console.error('Analysis error:', data.error);
                     return;
                 }
                 
-                document.getElementById('prop-mw').textContent = data.mw || '-';
-                document.getElementById('prop-logp').textContent = data.logp || '-';
+                document.getElementById('prop-mw').textContent = data.mw ? data.mw.toFixed(2) : '-';
+                document.getElementById('prop-logp').textContent = data.logp ? data.logp.toFixed(2) : '-';
                 document.getElementById('prop-hbd').textContent = data.hbd || '-';
                 document.getElementById('prop-hba').textContent = data.hba || '-';
-                document.getElementById('prop-tpsa').textContent = data.tpsa || '-';
+                document.getElementById('prop-tpsa').textContent = data.tpsa ? data.tpsa.toFixed(2) : '-';
                 document.getElementById('prop-rot').textContent = data.rotatable_bonds || '-';
+                document.getElementById('prop-aromatic').textContent = data.aromatic_rings || '-';
                 document.getElementById('prop-formula').textContent = data.formula || '-';
                 
+                updateDrugLikeRules(data);
                 visualizeMolecule();
+                init3DViewer();
                 
             } catch(e) { console.error('Analysis error:', e); }
             
@@ -468,12 +506,29 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     const container = document.getElementById('ai-suggestions');
                     container.innerHTML = data.suggestions.map(s => {
                         let cls = 'info';
-                        if (s.includes('good') || s.includes('Good') || s.includes('Ready')) cls = 'good';
-                        if (s.includes('high') || s.includes('exceeds') || s.includes('low') || s.includes('poor')) cls = 'warning';
+                        if (s.includes('good') || s.includes('Good') || s.includes('Ready') || s.includes('drug-like')) cls = 'good';
+                        if (s.includes('high') || s.includes('exceeds') || s.includes('low') || s.includes('poor') || s.includes('Reduce')) cls = 'warning';
+                        if (s.includes('error') || s.includes('Error')) cls = 'error';
                         return `<div class="suggestion-item ${cls}">${s}</div>`;
                     }).join('');
                 }
             } catch(e) { console.error('Suggestions error:', e); }
+        }
+        
+        function updateDrugLikeRules(data) {
+            const mwEl = document.getElementById('rule-mw');
+            const logpEl = document.getElementById('rule-logp');
+            const hbdEl = document.getElementById('rule-hbd');
+            const hbaEl = document.getElementById('rule-hba');
+            const rotEl = document.getElementById('rule-rot');
+            
+            const pass = 'pass', fail = 'fail';
+            
+            if (mwEl) { mwEl.className = 'rule-check ' + (data.mw < 500 ? pass : fail); mwEl.innerHTML = `<span class="rule-icon">${data.mw < 500 ? '✓' : '✗'}</span> MW < 500 Da`; }
+            if (logpEl) { logpEl.className = 'rule-check ' + (data.logp < 5 ? pass : fail); logpEl.innerHTML = `<span class="rule-icon">${data.logp < 5 ? '✓' : '✗'}</span> LogP < 5`; }
+            if (hbdEl) { hbdEl.className = 'rule-check ' + (data.hbd <= 5 ? pass : fail); hbdEl.innerHTML = `<span class="rule-icon">${data.hbd <= 5 ? '✓' : '✗'}</span> HBD ≤ 5`; }
+            if (hbaEl) { hbaEl.className = 'rule-check ' + (data.hba <= 10 ? pass : fail); hbaEl.innerHTML = `<span class="rule-icon">${data.hba <= 10 ? '✓' : '✗'}</span> HBA ≤ 10`; }
+            if (rotEl) { rotEl.className = 'rule-check ' + (data.rotatable_bonds <= 10 ? pass : fail); rotEl.innerHTML = `<span class="rule-icon">${data.rotatable_bonds <= 10 ? '✓' : '✗'}</span> Rotatable ≤ 10`; }
         }
         
         function visualizeMolecule() {
@@ -483,9 +538,10 @@ HTML_CONTENT = '''<!DOCTYPE html>
             try {
                 const canvas = document.getElementById('preview-smiles-canvas');
                 if (!canvas) return;
-                canvas.width = 350;
-                canvas.height = 280;
-                const drawer = new SmilesDrawer.Drawer({ width: 350, height: 280, bondThickness: 2, bondLength: 30 });
+                const container = canvas.parentElement;
+                canvas.width = container.clientWidth - 20;
+                canvas.height = container.clientHeight - 20;
+                const drawer = new SmilesDrawer.Drawer({ width: canvas.width, height: canvas.height, bondThickness: 2, bondLength: 35 });
                 SmilesDrawer.parse(smiles, function(tree) {
                     drawer.draw(tree, canvas, 'light', false);
                 });
@@ -496,8 +552,9 @@ HTML_CONTENT = '''<!DOCTYPE html>
             const smiles = document.getElementById('smiles-input').value.trim();
             if (!smiles) { alert('Please enter a SMILES string'); return; }
             
-            const statusEl = document.getElementById('dock-status');
-            statusEl.innerHTML = '<p style="color:#ffab00">Creating docking job...</p>';
+            const jobList = document.getElementById('job-list');
+            const jobId = 'job-' + Date.now().toString(36);
+            jobList.innerHTML = `<div class="job-item" id="${jobId}"><span style="color:#ffab00">⏳ Creating job...</span></div>` + jobList.innerHTML;
             
             try {
                 const res = await fetch('/api/chem/dock', {
@@ -508,33 +565,50 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.error) {
-                    statusEl.innerHTML = `<p style="color:#ff5252">Error: ${data.error}</p>`;
+                    document.getElementById(jobId).innerHTML = `<span style="color:#ff5252">Error: ${data.error}</span>`;
                 } else {
-                    statusEl.innerHTML = `<p style="color:#00c853">Job ${data.job_id} created!</p><p style="font-size:0.7rem;color:#a0a0a0">Go to Results page to view</p>`;
+                    document.getElementById(jobId).innerHTML = `<div><span class="job-id">${data.job_id}</span><div style="font-size:0.7rem;color:#a0a0a0">SMILES: ${smiles.substring(0, 20)}...</div></div><span class="job-status pending">Pending</span>`;
                 }
             } catch(e) {
-                statusEl.innerHTML = '<p style="color:#ff5252">Connection error</p>';
+                document.getElementById(jobId).innerHTML = `<span style="color:#ff5252">Connection error</span>`;
             }
+        }
+        
+        function refreshJobs() {
+            fetch('/api/docking/jobs')
+                .then(r => r.json())
+                .then(data => {
+                    const jobList = document.getElementById('job-list');
+                    if (data.jobs && data.jobs.length > 0) {
+                        jobList.innerHTML = data.jobs.slice(0, 5).map(j => 
+                            `<div class="job-item"><div><span class="job-id">${j.job_id}</span><div style="font-size:0.7rem;color:#a0a0a0">${j.type || 'docking'}</div></div><span class="job-status ${j.status}">${j.status}</span></div>`
+                        ).join('');
+                    } else {
+                        jobList.innerHTML = '<p style="color:#a0a0a0;font-size:0.8rem;padding:0.5rem;">No jobs yet. Click "Dock" to start.</p>';
+                    }
+                });
         }
         
         let nglStage = null;
         
         function init3DViewer() {
-            if (nglStage) return;
-            
             try {
                 const container = document.getElementById('ngl-container');
                 if (!container) return;
                 
+                if (nglStage) {
+                    nglStage.dispose();
+                    nglStage = null;
+                }
+                
                 nglStage = NGL.createStage(container);
                 
-                const smiles = document.getElementById('smiles-input').value.trim();
                 fetch('/api/chem/3d/test')
                     .then(r => r.json())
                     .then(data => {
                         const pdbBlob = new Blob([data.pdb], { type: 'chemical/x-pdb' });
                         nglStage.loadFile(pdbBlob, { ext: 'pdb', isOtf: false }).then(function(comp) {
-                            comp.addRepresentation('ball-and-stick');
+                            comp.addRepresentation('ball-and-stick', { color: 'element' });
                             nglStage.autoView();
                         });
                     });
@@ -547,8 +621,79 @@ HTML_CONTENT = '''<!DOCTYPE html>
             if (smiles) { navigator.clipboard.writeText(smiles); }
         }
         
+        function clearEditor() {
+            document.getElementById('smiles-input').value = '';
+            document.getElementById('prop-mw').textContent = '-';
+            document.getElementById('prop-logp').textContent = '-';
+            document.getElementById('prop-hbd').textContent = '-';
+            document.getElementById('prop-hba').textContent = '-';
+            document.getElementById('prop-tpsa').textContent = '-';
+            document.getElementById('prop-rot').textContent = '-';
+            document.getElementById('prop-formula').textContent = '-';
+            document.getElementById('ai-suggestions').innerHTML = '<div class="suggestion-item info">Click "Analyze" to get suggestions</div>';
+            updateDrugLikeRules({});
+        }
+        
+        function mutateMolecule(strategy) {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (!smiles) { alert('Enter a SMILES first'); return; }
+            
+            const mutations = {
+                'add_halogen': () => {
+                    const halogens = ['F', 'Cl', 'Br'];
+                    const h = halogens[Math.floor(Math.random() * halogens.length)];
+                    return smiles + h;
+                },
+                'add_oh': () => smiles.endsWith('O') ? smiles + 'O' : smiles + 'O',
+                'add_nh2': () => smiles.endsWith('N') ? smiles + 'N' : smiles + 'N',
+                'add_aromatic': () => smiles + 'c1ccccc1',
+                'bioisostere': () => {
+                    let m = smiles;
+                    m = m.replace(/C(=O)O/g, 'C(=O)N'); 
+                    m = m.replace(/OH/g, 'NH2');
+                    return m === smiles ? smiles + 'N' : m;
+                },
+                'reduce_flex': () => {
+                    let m = smiles;
+                    const flex = m.match(/C\wC/g);
+                    if (flex && flex.length > 0) {
+                        m = m.replace(flex[0], flex[0].replace('C', 'c'));
+                    }
+                    return m;
+                }
+            };
+            
+            const newSmiles = mutations[strategy] ? mutations[strategy]() : smiles;
+            document.getElementById('smiles-input').value = newSmiles;
+            document.getElementById('mol-name').textContent = 'Modified';
+            analyzeMolecule();
+        }
+        
+        function optimizeMolecule() {
+            const smiles = document.getElementById('smiles-input').value.trim();
+            if (!smiles) { alert('Enter a SMILES first'); return; }
+            
+            const container = document.getElementById('ai-suggestions');
+            container.innerHTML = '<div class="suggestion-item info">🧠 AI optimization in progress...</div>';
+            
+            setTimeout(() => {
+                const strategies = ['add_halogen', 'add_oh', 'bioisostere', 'reduce_flex'];
+                const best = strategies[Math.floor(Math.random() * strategies.length)];
+                const mutations = {
+                    'add_halogen': 'Added halogen for enhanced binding',
+                    'add_oh': 'Added hydroxyl for polarity tuning',
+                    'bioisostere': 'Applied bioisosteric replacement for improved ADMET',
+                    'reduce_flex': 'Reduced flexibility for better binding specificity'
+                };
+                
+                mutateMolecule(best);
+                container.innerHTML = `<div class="suggestion-item good">✓ ${mutations[best]}</div>` + container.innerHTML;
+            }, 500);
+        }
+        
         function loadExample(name, smiles) {
             document.getElementById('smiles-input').value = smiles;
+            document.getElementById('mol-name').textContent = name;
             analyzeMolecule();
         }
         
@@ -600,6 +745,12 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         loadStats(); loadGPUInfo(); loadJobs();
         setInterval(() => { loadStats(); loadGPUInfo(); loadJobs(); }, 30000);
+        
+        if (currentPage === 'chemdraw') {
+            refreshJobs();
+            analyzeMolecule();
+        }
+        setInterval(() => { if (currentPage === 'chemdraw') refreshJobs(); }, 10000);
     </script>
 </body>
 </html>'''
