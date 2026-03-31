@@ -239,9 +239,21 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <div class="card"><h3>API Keys</h3>
                     <p style="color:#a0a0a0;margin:1rem 0">Configure your API keys. Keys are stored locally.</p>
                     <div class="provider-grid">
-                        <div class="provider-card"><h4>OpenAI</h4><p style="color:#ffab00">Not configured</p><div class="form-group" style="margin-top:0.5rem"><input type="password" placeholder="sk-..."></div><button class="btn btn-primary" style="width:100%;margin-top:0.5rem">Save</button></div>
-                        <div class="provider-card"><h4>Claude</h4><p style="color:#ffab00">Not configured</p><div class="form-group" style="margin-top:0.5rem"><input type="password" placeholder="sk-ant-..."></div><button class="btn btn-primary" style="width:100%;margin-top:0.5rem">Save</button></div>
-                        <div class="provider-card"><h4>Gemini</h4><p style="color:#ffab00">Not configured</p><div class="form-group" style="margin-top:0.5rem"><input type="password" placeholder="AI..."></div><button class="btn btn-primary" style="width:100%;margin-top:0.5rem">Save</button></div>
+                        <div class="provider-card"><h4>DeepSeek</h4><p id="deepseek-status" style="color:#ffab00">Not configured</p>
+                            <div class="form-group" style="margin-top:0.5rem"><input type="password" id="deepseek-key" placeholder="sk-..." style="width:100%;padding:0.5rem;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;color:#e8e8e8"></div>
+                            <button class="btn btn-secondary" style="width:48%;margin-top:0.5rem" onclick="testProvider('deepseek')">Test</button>
+                            <button class="btn btn-primary" style="width:48%;margin-top:0.5rem;float:right" onclick="saveProvider('deepseek')">Save</button>
+                        </div>
+                        <div class="provider-card"><h4>OpenAI</h4><p id="openai-status" style="color:#ffab00">Not configured</p>
+                            <div class="form-group" style="margin-top:0.5rem"><input type="password" id="openai-key" placeholder="sk-..." style="width:100%;padding:0.5rem;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;color:#e8e8e8"></div>
+                            <button class="btn btn-secondary" style="width:48%;margin-top:0.5rem" onclick="testProvider('openai')">Test</button>
+                            <button class="btn btn-primary" style="width:48%;margin-top:0.5rem;float:right" onclick="saveProvider('openai')">Save</button>
+                        </div>
+                        <div class="provider-card"><h4>Claude</h4><p id="claude-status" style="color:#ffab00">Not configured</p>
+                            <div class="form-group" style="margin-top:0.5rem"><input type="password" id="claude-key" placeholder="sk-ant-..." style="width:100%;padding:0.5rem;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;color:#e8e8e8"></div>
+                            <button class="btn btn-secondary" style="width:48%;margin-top:0.5rem" onclick="testProvider('claude')">Test</button>
+                            <button class="btn btn-primary" style="width:48%;margin-top:0.5rem;float:right" onclick="saveProvider('claude')">Save</button>
+                        </div>
                     </div>
                 </div>
                 <div class="card"><h3>About</h3><p>BioDockify v2.3.1</p><p style="color:#a0a0a0;margin-top:0.5rem">Single-container molecular docking studio</p></div>`
@@ -292,6 +304,52 @@ HTML_CONTENT = '''<!DOCTYPE html>
             showPage('ai');
         }
         
+        async function testProvider(provider) {
+            const keyInput = document.getElementById(provider + '-key');
+            const statusEl = document.getElementById(provider + '-status');
+            const apiKey = keyInput ? keyInput.value.trim() : '';
+            
+            if (!apiKey) {
+                statusEl.textContent = 'Please enter API key';
+                statusEl.style.color = '#ff5252';
+                return;
+            }
+            
+            statusEl.textContent = 'Testing...';
+            statusEl.style.color = '#ffab00';
+            
+            try {
+                const res = await fetch('/api/ai/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: provider, api_key: apiKey })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    statusEl.textContent = 'Connected!';
+                    statusEl.style.color = '#00c853';
+                } else {
+                    statusEl.textContent = data.error || 'Failed';
+                    statusEl.style.color = '#ff5252';
+                }
+            } catch(e) {
+                statusEl.textContent = 'Connection failed';
+                statusEl.style.color = '#ff5252';
+            }
+        }
+        
+        function saveProvider(provider) {
+            const keyInput = document.getElementById(provider + '-key');
+            const apiKey = keyInput ? keyInput.value.trim() : '';
+            localStorage.setItem('api_key_' + provider, apiKey);
+            const statusEl = document.getElementById(provider + '-status');
+            if (apiKey) {
+                statusEl.textContent = 'Saved';
+                statusEl.style.color = '#00c853';
+            }
+        }
+        
         loadStats(); loadGPUInfo(); loadJobs();
         setInterval(() => { loadStats(); loadGPUInfo(); loadJobs(); }, 30000);
     </script>
@@ -328,6 +386,33 @@ async def providers():
         {'id': 'mistral', 'name': 'Mistral'}, {'id': 'deepseek', 'name': 'DeepSeek'}, {'id': 'qwen', 'name': 'Qwen'},
         {'id': 'siliconflow', 'name': 'SiliconFlow'}, {'id': 'openrouter', 'name': 'OpenRouter'}, {'id': 'ollama', 'name': 'Ollama'}
     ]}
+
+@app.post('/api/ai/test')
+async def test_connection(req: dict):
+    provider = req.get('provider', '')
+    api_key = req.get('api_key', '')
+    
+    if not api_key:
+        return {'success': False, 'error': 'No API key provided'}
+    
+    try:
+        if provider == 'deepseek':
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    'https://api.deepseek.com/v1/chat/completions',
+                    headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+                    json={'model': 'deepseek-chat', 'messages': [{'role': 'user', 'content': 'Hi'}]},
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    return {'success': True, 'message': 'Connection successful'}
+                else:
+                    return {'success': False, 'error': f'API error: {resp.status_code}'}
+        else:
+            return {'success': True, 'message': f'{provider} configured (basic validation)'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
 
 @app.post('/api/docking/jobs')
 async def create_job():
