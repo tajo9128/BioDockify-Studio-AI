@@ -681,7 +681,13 @@ def add_result(
 def list_results(job_uuid: str):
     """Get all docking results for a job"""
     results = get_docking_results(job_uuid)
-    return {"results": results}
+    mapped = []
+    for r in results:
+        item = dict(r) if isinstance(r, dict) else {"mode": r.pose_id if hasattr(r, 'pose_id') else 1, "vina_score": None, "gnina_score": None, "rf_score": None}
+        if "pose_id" in item and "mode" not in item:
+            item["mode"] = item["pose_id"]
+        mapped.append(item)
+    return {"results": mapped}
 
 
 @app.get("/jobs/{job_uuid}/interactions")
@@ -989,6 +995,8 @@ def api_docking_run(req: DockingRunRequest):
             "results": results,
             "files": docking_result.get("files", {}),
             "download_urls": docking_result.get("download_urls", {}),
+            "receptor_file": docking_result.get("files", {}).get("receptor", None),
+            "ligand_file": docking_result.get("files", {}).get("ligand", None),
             "message": f"Docking complete - {len(results)} poses generated"
         }
         
@@ -1760,6 +1768,28 @@ def llm_test(req: LLMTestRequest):
     except Exception as e:
         logger.warning(f"LLM test failed: {str(e)}")
         return {"status": "error", "response": None, "error": str(e)}
+
+
+@app.post("/api/rdkit/prepare")
+def api_rdkit_prepare(req: Dict[str, Any]):
+    """Unified preparation endpoint for protein/receptor/ligand"""
+    content = req.get("content", "")
+    prep_type = req.get("type", "protein")
+    if not content:
+        return {"success": False, "error": "No content provided"}
+    try:
+        from docking_engine import prepare_protein_from_content, prepare_ligand_from_content
+        if prep_type in ("protein", "receptor"):
+            result = prepare_protein_from_content(content, STORAGE_DIR)
+            return result if result else {"success": False, "error": "Protein preparation failed"}
+        elif prep_type == "ligand":
+            result = prepare_ligand_from_content(content, "sdf", STORAGE_DIR)
+            return result if result else {"success": False, "error": "Ligand preparation failed"}
+        else:
+            return {"success": False, "error": f"Unknown type: {prep_type}"}
+    except Exception as e:
+        logger.error(f"Prepare failed: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/{path:path}")

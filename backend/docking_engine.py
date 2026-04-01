@@ -795,12 +795,61 @@ def smart_dock(
         logger.warning("[SmartDock] No docking engine available - generating simulated results")
         pipeline["engine_used"] = "simulated"
         pipeline["results"] = generate_simulated_results(num_modes)
+        pipeline["best_score"] = min(r["vina_score"] for r in pipeline["results"])
         pipeline["routing_decision"] = "simulated (no docking engine)"
         pipeline["pipeline_stages"].append({
             "stage": "docking",
             "status": "simulated",
             "details": "No Vina/GNINA available"
         })
+
+        sim_log_path = os.path.join(output_dir, f"{job_id}_log.txt")
+        with open(sim_log_path, 'w') as f:
+            f.write(f"BioDockify Simulated Docking Results\n")
+            f.write(f"{'='*40}\n")
+            f.write(f"Job ID: {job_id}\n")
+            f.write(f"Engine: simulated\n")
+            f.write(f"Modes: {num_modes}\n")
+            f.write(f"Best Score: {pipeline['best_score']:.2f} kcal/mol\n\n")
+            f.write(f"{'Mode':<6}{'Vina':<10}{'GNINA':<10}{'RF':<10}\n")
+            f.write(f"{'-'*36}\n")
+            for r in pipeline["results"]:
+                gnina = f"{r['gnina_score']:.2f}" if r.get('gnina_score') else '-'
+                rf = f"{r['rf_score']:.2f}" if r.get('rf_score') else '-'
+                f.write(f"{r['mode']:<6}{r['vina_score']:<10.2f}{gnina:<10}{rf:<10}\n")
+
+        sim_pdb_path = os.path.join(output_dir, f"{job_id}_docking.pdb")
+        with open(sim_pdb_path, 'w') as f:
+            f.write(f"REMARK   BioDockify Simulated Docking - {job_id}\n")
+            f.write(f"REMARK   Best score: {pipeline['best_score']:.2f} kcal/mol\n")
+            for r in pipeline["results"][:3]:
+                cx = center_x + random.uniform(-2, 2)
+                cy = center_y + random.uniform(-2, 2)
+                cz = center_z + random.uniform(-2, 2)
+                f.write(f"REMARK   Mode {r['mode']}: {r['vina_score']:.2f} kcal/mol\n")
+                f.write(f"MODEL    {r['mode']}\n")
+                f.write(f"HETATM    1  C   LIG A   1    {cx:8.3f}{cy:8.3f}{cz:8.3f}  1.00  0.00           C\n")
+                f.write(f"HETATM    2  C   LIG A   1    {cx+1.5:8.3f}{cy:8.3f}{cz:8.3f}  1.00  0.00           C\n")
+                f.write(f"HETATM    3  N   LIG A   1    {cx+0.7:8.3f}{cy+1.2:8.3f}{cz:8.3f}  1.00  0.00           N\n")
+                f.write(f"HETATM    4  O   LIG A   1    {cx-0.5:8.3f}{cy-1.0:8.3f}{cz:8.3f}  1.00  0.00           O\n")
+                f.write("ENDMDL\n")
+
+        sim_grid_path = os.path.join(output_dir, f"{job_id}_grid.txt")
+        with open(sim_grid_path, 'w') as f:
+            f.write(f"BioDockify Grid Configuration\n")
+            f.write(f"center_x = {center_x}\ncenter_y = {center_y}\ncenter_z = {center_z}\n")
+            f.write(f"size_x = {size_x}\nsize_y = {size_y}\nsize_z = {size_z}\n")
+
+        pipeline["files"] = {"log": sim_log_path, "docking": sim_pdb_path, "grid": sim_grid_path}
+        pipeline["download_urls"] = {
+            "log_file": f"/download/{os.path.basename(sim_log_path)}",
+            "docking_file": f"/download/{os.path.basename(sim_pdb_path)}",
+            "grid_file": f"/download/{os.path.basename(sim_grid_path)}"
+        }
+        if receptor_pdbqt:
+            pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+        if ligand_pdbqt:
+            pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
         return pipeline
     
     logger.info("[SmartDock] STEP 3: Running initial Vina scan...")
@@ -855,6 +904,10 @@ def smart_dock(
                 "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
                 "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}"
             }
+            if receptor_pdbqt:
+                pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+            if ligand_pdbqt:
+                pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
             
         else:
             logger.info(f"[SmartDock] Energy ({best_score:.2f}) > {ENERGY_THRESHOLD} → GNINA + RF required")
@@ -886,11 +939,18 @@ def smart_dock(
             })
             
             pipeline["download_urls"] = {
+                "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+                "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+                "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
                 "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
                 "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
                 "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
                 "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}"
             }
+            if receptor_pdbqt:
+                pipeline["download_urls"]["receptor_file"] = f"/download/{os.path.basename(receptor_pdbqt)}"
+            if ligand_pdbqt:
+                pipeline["download_urls"]["ligand_file"] = f"/download/{os.path.basename(ligand_pdbqt)}"
     else:
         pipeline["success"] = False
         pipeline["error"] = vina_result.get("error", "Vina docking failed")
