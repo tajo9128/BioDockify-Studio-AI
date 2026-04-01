@@ -515,20 +515,46 @@ async def chat_stream(request: ChatRequest):
 async def chat_status():
     """Get chat service status"""
     settings = await get_llm_settings()
+    provider = settings.get("provider", "openai")
+    base_url = settings.get("base_url", "")
+    api_key = settings.get("api_key", "")
+    available = False
+    models = []
+    
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
-                f"{settings['base_url']}/models",
-                headers={"Authorization": f"Bearer {settings['api_key']}"},
-            )
-            models = [m.get("id") for m in response.json().get("data", [])[:10]]
-            available = True
-    except Exception:
-        models = []
+        if provider == "ollama":
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{base_url}/api/tags")
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("name", "") for m in data.get("models", [])]
+                    available = True
+        elif provider == "anthropic":
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    available = True
+        elif api_key:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    available = True
+    except Exception as e:
+        logger.warning(f"Status check failed for {provider}: {e}")
         available = False
 
     return {
-        "provider": settings.get("provider", "openai"),
+        "provider": provider,
         "ollama_available": available,
         "models": [{"name": m} for m in models],
     }

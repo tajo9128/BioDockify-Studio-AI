@@ -76,6 +76,7 @@ export function AIAssistant() {
       setStatus({ provider: s.provider, available: s.ollama_available })
     } catch (err) {
       console.error('Status check failed:', err)
+      setStatus({ provider: 'unknown', available: false })
     }
   }
 
