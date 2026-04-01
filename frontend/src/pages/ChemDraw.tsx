@@ -273,17 +273,17 @@ export function ChemDraw() {
 
   return (
     <div className="h-full flex flex-col bg-gray-100">
-      <div className="bg-slate-900 text-white px-6 py-3 flex items-center gap-4">
-        <h1 className="text-lg font-bold text-cyan-400">Biodockify ChemDraw</h1>
+      <div className="bg-slate-800 text-white px-4 py-2 flex items-center gap-3">
+        <span className="text-sm font-medium text-cyan-400">ChemDraw</span>
         <span className="text-xs text-gray-400">Design, analyze & dock molecules</span>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={clearEditor}>Clear</Button>
-        <Button variant="outline" size="sm" onClick={copySmiles}>Copy SMILES</Button>
+        <Button variant="outline" size="sm" onClick={copySmiles}>Copy</Button>
         <Button variant="outline" size="sm" onClick={analyzeMolecule} disabled={loading}>
-          {loading ? 'Analyzing...' : 'Analyze'}
+          {loading ? '...' : 'Analyze'}
         </Button>
         <Button variant="primary" size="sm" onClick={dockMolecule}>Dock</Button>
-        <Button variant="secondary" size="sm" onClick={optimizeMolecule}>Optimize</Button>
+        <Button variant="secondary" size="sm" onClick={optimizeMolecule}>AI</Button>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
