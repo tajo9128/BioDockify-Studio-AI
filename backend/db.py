@@ -121,6 +121,7 @@ def add_docking_result(job_uuid: str, pose_id: int, ligand_name: str,
                       rf_score: Optional[float] = None, pdb_data: Optional[str] = None) -> bool:
     """Add docking result for a pose"""
     try:
+        print(f"[DB] Saving result: job_uuid={job_uuid}, pose_id={pose_id}, vina={vina_score}")
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         
@@ -199,10 +200,12 @@ def get_all_jobs(limit: int = 50) -> List[Dict[str, Any]]:
 def get_docking_results(job_uuid: str) -> List[Dict[str, Any]]:
     """Get docking results for a job"""
     try:
+        print(f"[DB] Getting results for job_uuid={job_uuid}, DB_PATH={DB_PATH}")
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT * FROM docking_results WHERE job_uuid = ? ORDER BY pose_id", (job_uuid,))
         rows = cur.fetchall()
+        print(f"[DB] Found {len(rows)} rows for job_uuid={job_uuid}")
         conn.close()
         
         columns = ['id', 'job_uuid', 'pose_id', 'ligand_name', 'vina_score', 'gnina_score', 

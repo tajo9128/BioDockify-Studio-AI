@@ -616,9 +616,11 @@ def api_docking_run(req: DockingRunRequest):
         results = docking_result.get("results", [])
         best_score = docking_result.get("best_score") or (results[0]['vina_score'] if results else 0)
         
+        logger.info(f"[Docking] Saving {len(results)} results for job {job_id}")
+        saved_count = 0
         for r in results:
             try:
-                add_docking_result(
+                success = add_docking_result(
                     job_id,
                     r.get("mode", 1),
                     "ligand",
@@ -626,8 +628,14 @@ def api_docking_run(req: DockingRunRequest):
                     gnina_score=r.get("gnina_score"),
                     rf_score=r.get("rf_score")
                 )
+                if success:
+                    saved_count += 1
+                else:
+                    logger.error(f"add_docking_result returned False for mode {r.get('mode')}")
             except Exception as e:
                 logger.error(f"Failed to save result: {e}")
+        
+        logger.info(f"[Docking] Saved {saved_count}/{len(results)} results to database")
         
         update_job_status(job_id, "completed", best_score)
         
