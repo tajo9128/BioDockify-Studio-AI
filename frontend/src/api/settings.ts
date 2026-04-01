@@ -19,7 +19,16 @@ export async function updateLLMSettings(settings: Partial<LLMSettings>): Promise
   return data
 }
 
-export async function testLLMConnection(): Promise<{ status: string; response?: string; error?: string }> {
-  const { data } = await apiClient.post('/llm/test')
+export async function testLLMConnection(config?: Partial<LLMSettings>): Promise<{ status: string; response?: string; error?: string }> {
+  const { data } = await apiClient.post('/llm/test', config || {})
   return data
+}
+
+export async function getOllamaModels(): Promise<{ available: boolean; models: string[]; error?: string }> {
+  try {
+    const { data } = await apiClient.get('/llm/ollama/models')
+    return data
+  } catch {
+    return { available: false, models: [], error: 'Failed to fetch Ollama models' }
+  }
 }
