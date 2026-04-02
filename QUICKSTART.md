@@ -1,211 +1,169 @@
-# 🚀 Quick Start Guide
+# 🚀 Quick Start Guide — BioDockify Studio AI v4.2.0
 
-## ⚠️ Before You Begin: Install Docker (Required)
+## Two Ways to Run
 
-Docking Studio runs inside Docker containers. **Docker Desktop must be installed first.**
-
-### Download Docker Desktop
-
-| OS | Download Link | Size |
-|----|--------------|------|
-| Windows | [docker.com/desktop/windows](https://www.docker.com/products/docker-desktop) | ~500 MB |
-| Mac (Apple Silicon) | [docker.com/desktop/mac/apple-silicon](https://www.docker.com/products/docker-desktop) | ~500 MB |
-| Mac (Intel) | [docker.com/desktop/mac/intel](https://www.docker.com/products/docker-desktop) | ~500 MB |
-| Ubuntu | [docker.com/desktop/linux/ubuntu](https://www.docker.com/products/docker-desktop) | ~300 MB |
-
-> **Windows users:** After installing, **restart your computer** — don't just log out/in.
-
-### Start Docker Desktop
-
-After installation, find and open **Docker Desktop** from your Applications/Start Menu.
-
-Wait until you see the whale icon with green lights:
-
-```
-✅ Docker Desktop - Running
-```
-
-### Verify Docker is Ready
-
-Open a **new** terminal and run:
-
-```bash
-docker --version
-```
-
-You should see something like `Docker version 27.x.x`. If you get an error, Docker Desktop is not running yet.
+| Mode | Best For | Setup Time |
+|------|----------|------------|
+| **Localhost** (recommended) | Students, quick start, no Docker | 2 minutes |
+| **Docker** | Production, multi-user, isolated | 10 minutes |
 
 ---
 
-## Step 1: Clone or Download This Project
+## Option A: Localhost Mode (Recommended for Students)
 
-**If you have Git:**
+### Prerequisites
+- Python 3.11+ (check: `python --version`)
+- Node.js 18+ (check: `node --version`)
+
+### One-Click Start
 ```bash
-git clone https://github.com/tajo9128/Docking-studio.git
-cd Docking-studio
-```
-
-**If you don't have Git:**
-→ Click the green **"Code"** button on GitHub
-→ Click **"Download ZIP"**
-→ Extract the ZIP file
-→ Open terminal/command prompt in the extracted folder
-
----
-
-## Step 2: Start Docking Studio
-
-### Windows: Open `start.bat`
-
-Double-click `start.bat` in the project folder.
-
-Or open **Command Prompt** in the project folder and run:
-```bat
+# Windows — double-click
 start.bat
+
+# macOS/Linux — terminal
+chmod +x start.sh && ./start.sh
 ```
 
-### Mac / Linux: Run `start.sh`
-
-Open **Terminal** and run:
+### Manual Start
 ```bash
-chmod +x start.sh
+# 1. Build frontend (one-time, ~30 seconds)
+cd frontend && npx vite build && cd ..
+
+# 2. Install Python dependencies (one-time, ~2 minutes)
+pip install -r backend/requirements.txt
+
+# 3. Start the server
+python app/launcher.py
+```
+
+The server will:
+- ✅ Auto-detect a free port (starts at 8000)
+- ✅ Open your browser automatically
+- ✅ Serve ALL 160+ API routes + React frontend from one process
+- ✅ Work offline after first install
+
+### Access Points
+- **Main App**: http://127.0.0.1:8000
+- **Student Mode**: http://127.0.0.1:8000/student
+- **API Docs**: http://127.0.0.1:8000/docs
+- **Health Check**: http://127.0.0.1:8000/api/health
+
+---
+
+## Option B: Docker Mode
+
+### Prerequisites
+- Docker Desktop installed and running
+
+### Start
+```bash
+# Windows
+start.bat
+
+# macOS/Linux
 ./start.sh
-```
 
----
-
-## Step 3: Wait and Open Browser
-
-The script will show progress as it builds and starts the application.
-
-**First time (takes 5-10 minutes):**
-```
-Building... (downloading Vina, GNINA, RDKit for the first time)
-```
-
-**After first run (takes ~10 seconds):**
-```
-Starting...
-Waiting for backend...
-✅ Docking Studio is ready!
-```
-
-Once ready, **open your browser** and go to:
-
-### 🌐 [http://localhost:8000](http://localhost:8000)
-
----
-
-## Quick Reference
-
-| Task | Command |
-|------|---------|
-| Start (from project folder) | `start.bat` or `./start.sh` |
-| Stop everything | `docker compose down` |
-| View live logs | `docker compose logs -f backend` |
-| Restart completely fresh | `docker compose down -v && start.bat` |
-| Update to latest version | `git pull && docker compose up -d --build` |
-
----
-
-## Port Reference
-
-| URL | What it is |
-|----|-----------|
-| [http://localhost:8000](http://localhost:8000) | **Main Web UI** — your docking workspace |
-| [http://localhost:8000/docs](http://localhost:8000/docs) | API Documentation — for developers |
-
----
-
-## Troubleshooting
-
-### "Docker is not running" / "command not found: docker"
-
-→ **Docker Desktop is not started.**
-→ Find "Docker Desktop" in your Applications/Start Menu and open it.
-→ Wait 30 seconds for it to fully start.
-→ Then run `start.bat` or `./start.sh` again.
-
----
-
-### "Port 8000 is already in use"
-
-Something else is using port 8000. Stop it with:
-```bash
-docker compose down
-```
-Then try starting again.
-
----
-
-### "Backend failed to start" / containers keep restarting
-
-Check what's wrong:
-```bash
-docker compose logs backend
-```
-
-If it mentions memory errors, open `docker-compose.yml` and lower these numbers:
-```yaml
-memory: 4G   # ← change to 2G if you have less RAM
-```
-
----
-
-### "First build failed" / "npm/node error"
-
-You need **Node.js** installed for the frontend build to work inside Docker. This is usually pre-installed on Mac/Linux. On Windows, make sure you installed Docker Desktop (which includes Node.js in recent versions).
-
-If you continue to have issues:
-```bash
-docker compose down -v
-docker system prune -f
+# Or manually
 docker compose up -d --build
 ```
 
----
+### Access
+- **Main App**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-### The browser shows "This site can't be reached"
-
-Wait 60 seconds. The backend takes time to start on first run.
-
-If still not working:
+### Stop
 ```bash
-docker compose logs backend --tail=20
+docker compose down
 ```
 
 ---
 
-## ⚠️ Common Student Problems
+## 🎓 Student Quick Start
+
+1. Visit http://127.0.0.1:8000/student
+2. Choose a tutorial (recommended order):
+   - **ChemDraw** — draw molecules, learn properties (~15 min)
+   - **Docking** — see how drugs bind to proteins (~20 min)
+   - **QSAR** — build predictive models (~20 min)
+3. Follow guided steps with SmartTooltip explanations (🔬/📖 toggle)
+4. Track your XP and progress
+
+### Recommended Learning Path
+```
+ChemDraw → Docking → Pharmacophore → QSAR → ADMET → MD → AI Assistant
+```
+
+---
+
+## 🏫 Classroom Mode
+
+### For Instructors
+1. Create assignment: `POST /classroom/assignment/create`
+   - Returns a 6-character code (e.g., `A3K9X2`)
+2. Share code with students
+3. Monitor progress: `GET /classroom/instructor/{your_id}`
+4. Export grades as CSV
+
+### For Students
+1. Join assignment: `POST /classroom/assignment/join` with the 6-char code
+2. Complete the task using any BioDockify feature
+3. Submit: `POST /classroom/assignment/submit`
+4. Get instant auto-graded feedback
+
+---
+
+## 🌐 Languages
+
+Switch in **Settings → Language** tab. Supported:
+- 🇬🇧 English
+- 🇪🇸 Español
+- 🇨🇳 中文
+- 🇸🇦 العربية (RTL)
+
+---
+
+## ♿ Accessibility
+
+**Settings → Accessibility**:
+- **High Contrast Mode** — for better visibility
+- **Reduced Motion** — minimize animations
+- **Font Size** — adjustable 12px to 24px
+
+---
+
+## 📦 All Features
+
+| Category | Features |
+|----------|----------|
+| **Docking** | Vina/GNINA/RF, composite scoring, flexibility, constraints |
+| **ChemDraw** | 2D/3D editor, cleanup, IUPAC, InChI, conformers, export |
+| **Pharmacophore** | Feature extraction, hypothesis, exclusion volumes, screening |
+| **QSAR** | Descriptors, ML models, Y-scrambling, SHAP, Williams plot |
+| **ADMET** | A/D/M/E/T prediction |
+| **MD** | OpenMM, equilibration, checkpoint, MM-GBSA |
+| **AI** | Multi-provider LLM, model selector, interaction analysis |
+| **CrewAI** | 7 agents, validated tools, memory, meta-learning |
+| **Active Learning** | Bayesian optimization, compound prioritization |
+| **NL-to-DAG** | Natural language workflows, self-healing |
+| **Critique Agent** | Chemical validation, uncertainty gating |
+| **Knowledge Graph** | Memgraph, target/compound linking |
+| **Classroom** | Assignment codes, auto-grading, dashboard |
+| **i18n** | 4 languages with RTL support |
+| **Accessibility** | High-contrast, reduced motion, font size |
+
+---
+
+## 🔧 Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| "I don't have Docker" | Install Docker Desktop (free) from docker.com |
-| "Docker installed but won't start" | Restart your computer. Enable WSL2 if prompted on Windows. |
-| "I have limited RAM (4GB)" | Edit `docker-compose.yml` and change `memory: 4G` to `memory: 2G` |
-| "I'm on a school computer" | Ask IT to enable Docker / Virtualization. |
-| "I can't install software" | Use a cloud platform like Google Colab or GitHub Codespaces instead. |
-| "Build keeps failing" | Run `docker system prune -f` to clear Docker cache, then try again. |
+| Port 8000 busy | Launcher auto-detects next free port |
+| Frontend not loading | Run `cd frontend && npx vite build` |
+| Python import error | Run `pip install -r backend/requirements.txt` |
+| Ollama not connecting | Settings → AI Provider → Test Connection |
+| Emoji errors on Windows | Fixed in v4.0.0+ with UTF-8 encoding |
+| Docker not running | Start Docker Desktop, wait for green light |
 
 ---
 
-## What's Inside?
-
-Once running, explore these pages:
-
-| Page | What it does |
-|------|-------------|
-| **Dashboard** | System health, GPU status, quick actions |
-| **New Docking** | Upload receptor + ligand → configure grid → run docking |
-| **Job Queue** | See all running and completed jobs |
-| **Results** | Binding scores, interactions, pose analysis |
-| **3D Viewer** | Rotate, zoom, and screenshot molecular structures |
-| **RMSD Analysis** | Compare binding poses |
-| **Interactions** | H-bonds, hydrophobic, π-π stacking, salt bridges |
-| **AI Assistant** | Ask questions about your results (needs Ollama) |
-| **Security** | Container and dependency vulnerability scanner |
-| **Settings** | Configure AI provider, Docker settings |
-
----
-
-**Happy Docking! 🧬**
+**Version**: 4.2.0 | **License**: MIT | **GitHub**: https://github.com/tajo9128/BioDockify-Studio-AI
