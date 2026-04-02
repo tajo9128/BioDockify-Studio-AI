@@ -147,3 +147,42 @@ export async function getMDHealth(): Promise<{ status: string; engine: string }>
   const { data } = await apiClient.get('/md/health')
   return data
 }
+
+export interface MDEquilibrationRequest {
+  pdb_content: string
+  temperature: number
+  pressure: number
+  solvent_model: string
+  ionic_strength: number
+  name: string
+}
+
+export interface MMEquilibriumResult {
+  equilibrated_pdb: string
+  checkpoint: string
+  minimization_energy_kj_mol: number
+  nvt_energy_kj_mol: number
+  npt_energy_kj_mol: number
+  n_atoms: number
+  ready_for_production: boolean
+}
+
+export async function runEquilibration(request: MDEquilibrationRequest): Promise<MDJobResponse> {
+  const { data } = await apiClient.post('/md/equilibration', request)
+  return data
+}
+
+export async function resumeSimulation(jobId: string, steps: number = 50000, frameInterval: number = 500): Promise<MDJobResponse> {
+  const { data } = await apiClient.post('/md/resume', null, { params: { job_id: jobId, steps, frame_interval: frameInterval } })
+  return data
+}
+
+export async function calculateMMGBSA(request: { trajectory_path: string; receptor_pdb: string; ligand_pdb: string }): Promise<any> {
+  const { data } = await apiClient.post('/md/mmgbsa', request)
+  return data
+}
+
+export async function getGPUStatus(): Promise<any> {
+  const { data } = await apiClient.get('/md/gpu/status')
+  return data
+}

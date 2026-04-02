@@ -4,6 +4,10 @@ import { Card, Button, Tabs, TabPanel } from '@/components/ui'
 import Plot from 'react-plotly.js'
 import {
   runDynamics,
+  runEquilibration,
+  resumeSimulation,
+  calculateMMGBSA,
+  getGPUStatus,
   getMDJobStatus,
   analyzeRMSD,
   analyzeRMSF,
@@ -74,12 +78,27 @@ export function MoleculeDynamics() {
   const [analysisLoading, setAnalysisLoading] = useState<string | null>(null)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [pubLoading, setPubLoading] = useState(false)
+  const [gpuStatus, setGpuStatus] = useState<any>(null)
+  const [equilJobId, setEquilJobId] = useState<string | null>(null)
+  const [equilResult, setEquilResult] = useState<any>(null)
+  const [mmgbsaResult, setMmgbsaResult] = useState<any>(null)
+  const [mmgbsaLoading, setMmgbsaLoading] = useState(false)
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadNotifyStatus()
+    loadGPUStatus()
   }, [])
+
+  async function loadGPUStatus() {
+    try {
+      const status = await getGPUStatus()
+      setGpuStatus(status)
+    } catch (e) {
+      console.warn('Could not load GPU status')
+    }
+  }
 
   useEffect(() => {
     if (currentJobId && jobStatus?.status === 'running') {
@@ -210,6 +229,52 @@ export function MoleculeDynamics() {
     }
   }
 
+  async function handleRunEquilibration() {
+    if (!pdbContent.trim()) {
+      setRunError('Please enter PDB content')
+      return
+    }
+    setRunError(null)
+    setRunLoading(true)
+    try {
+      const response = await runEquilibration({
+        pdb_content: pdbContent,
+        temperature,
+        pressure: 1.0,
+        solvent_model: solventModel,
+        ionic_strength: 0.15,
+        name: simName + '_equil',
+      })
+      setEquilJobId(response.job_id)
+      setActiveTab('monitor')
+    } catch (err: any) {
+      setRunError(err?.response?.data?.detail || err?.message || 'Failed to start equilibration')
+    } finally {
+      setRunLoading(false)
+    }
+  }
+
+  async function handleRunMMGBSA() {
+    if (!jobStatus?.result?.trajectory_path) {
+      setAnalysisError('No completed trajectory to analyze')
+      return
+    }
+    setMmgbsaLoading(true)
+    setAnalysisError(null)
+    try {
+      const result = await calculateMMGBSA({
+        trajectory_path: jobStatus.result.trajectory_path,
+        receptor_pdb: pdbContent,
+        ligand_pdb: '',
+      })
+      setMmgbsaResult(result)
+    } catch (err: any) {
+      setAnalysisError(err?.response?.data?.detail || err?.message || 'MM-GBSA failed')
+    } finally {
+      setMmgbsaLoading(false)
+    }
+  }
+
   function renderPlotly(data: any, layout: any) {
     try {
       return <Plot data={data} layout={{ ...layout, paper_bgcolor: 'transparent', plot_bgcolor: 'transparent' }} config={{ displayModeBar: false }} style={{ width: '100%', height: 300 }} />
@@ -228,7 +293,17 @@ export function MoleculeDynamics() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Molecular Dynamics</h1>
-        <p className="text-text-secondary mt-1">OpenMM CPU simulation + MD-Suite analysis</p>
+        <p className="text-text-secondary mt-1">OpenMM MD simulation with real-time monitoring</p>
+        {gpuStatus && (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span className={`w-2 h-2 rounded-full ${gpuStatus.gpu_available ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className="text-text-tertiary">
+              {gpuStatus.gpu_available
+                ? `GPU: ${gpuStatus.recommended_platform}`
+                : `CPU mode (${gpuStatus.all_platforms?.join(', ') || 'Reference'})`}
+            </span>
+          </div>
+        )}
       </div>
 
       <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
@@ -382,6 +457,44 @@ export function MoleculeDynamics() {
                 >
                   {runLoading ? 'Starting...' : '▶ Start Dynamics'}
                 </Button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={handleRunEquilibration}
+                    disabled={runLoading || !pdbContent.trim()}
+                    variant="secondary"
+                    className="text-xs"
+                  >
+                    ⚖️ Run Equilibration
+                  </Button>
+                  <Button
+                    onClick={handleRunMMGBSA}
+                    disabled={mmgbsaLoading || !jobStatus?.result?.trajectory_path}
+                    variant="secondary"
+                    className="text-xs"
+                  >
+                    {mmgbsaLoading ? 'Computing...' : '🔬 MM-GBSA'}
+                  </Button>
+                </div>
+
+                {equilResult && (
+                  <div className="p-3 rounded bg-green-900/50 border border-green-700 text-green-300 text-xs space-y-1">
+                    <p className="font-semibold">✓ Equilibration Complete</p>
+                    <p>Minimization: {equilResult.minimization_energy_kj_mol} kJ/mol</p>
+                    <p>NVT: {equilResult.nvt_energy_kj_mol} kJ/mol</p>
+                    <p>NPT: {equilResult.npt_energy_kj_mol} kJ/mol</p>
+                    <p>Atoms: {equilResult.n_atoms}</p>
+                  </div>
+                )}
+
+                {mmgbsaResult && mmgbsaResult.success && (
+                  <div className="p-3 rounded bg-purple-900/50 border border-purple-700 text-purple-300 text-xs space-y-1">
+                    <p className="font-semibold">✓ MM-GBSA Results</p>
+                    <p>Mean Binding Energy: {mmgbsaResult.mean_binding_energy_kj_mol} kJ/mol</p>
+                    <p>Std Dev: {mmgbsaResult.std_binding_energy_kj_mol} kJ/mol</p>
+                    <p>Frames Analyzed: {mmgbsaResult.n_frames_analyzed}</p>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -395,7 +508,7 @@ export function MoleculeDynamics() {
                   </div>
                   <div className="bg-gray-800 rounded p-3">
                     <p className="text-xs text-gray-400">Platform</p>
-                    <p className="text-lg font-bold text-white">CPU</p>
+                    <p className="text-lg font-bold text-white">{gpuStatus?.recommended_platform || 'Auto'}</p>
                   </div>
                   <div className="bg-gray-800 rounded p-3">
                     <p className="text-xs text-gray-400">Ensemble</p>
