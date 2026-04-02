@@ -430,6 +430,159 @@ class PharmacophoreEngine:
         
         return spheres
 
+    def generate_hypothesis(self, active_smiles: List[str], min_features: int = 3, max_features: int = 6) -> Dict[str, Any]:
+        """
+        Generate pharmacophore hypothesis from multiple active ligands.
+        Finds common features across all active molecules.
+        """
+        try:
+            from rdkit.Chem import AllChem, rdMolAlign
+            import numpy as np
+
+            all_features = []
+            for smi in active_smiles:
+                mol = Chem.MolFromSmiles(smi)
+                if mol is None:
+                    continue
+                mol = Chem.AddHs(mol)
+                AllChem.EmbedMolecule(mol, randomSeed=42)
+                AllChem.MMFFOptimizeMolecule(mol)
+                feats = self._extract_features(mol)
+                all_features.append({
+                    'smiles': smi,
+                    'features': feats,
+                    'mol': mol
+                })
+
+            if len(all_features) < 2:
+                return {'success': False, 'error': 'Need at least 2 valid molecules'}
+
+            feature_types = ['Donor', 'Acceptor', 'Hydrophobic', 'Aromatic', 'PosIonizable', 'NegIonizable']
+            common_features = []
+
+            for ftype in feature_types:
+                positions_by_mol = []
+                for entry in all_features:
+                    type_feats = [f for f in entry['features'] if f['family'] == ftype]
+                    if type_feats:
+                        positions_by_mol.append(type_feats)
+
+                if len(positions_by_mol) >= len(all_features) * 0.7:
+                    all_positions = []
+                    for feats in positions_by_mol:
+                        for f in feats:
+                            all_positions.append(f['position'])
+
+                    if all_positions:
+                        positions_arr = np.array(all_positions)
+                        center = np.mean(positions_arr, axis=0).tolist()
+                        radius = float(np.max(np.linalg.norm(positions_arr - center, axis=1))) + 1.0
+
+                        common_features.append({
+                            'type': ftype,
+                            'center': center,
+                            'radius': round(min(radius, 3.0), 2),
+                            'color': FEATURE_COLORS.get(ftype, '#888888'),
+                            'coverage': len(positions_by_mol) / len(all_features)
+                        })
+
+            common_features.sort(key=lambda x: x.get('coverage', 0), reverse=True)
+            common_features = common_features[:max_features]
+
+            score = sum(f['coverage'] for f in common_features) / max(len(common_features), 1)
+
+            return {
+                'success': True,
+                'hypothesis': common_features,
+                'n_features': len(common_features),
+                'n_molecules': len(all_features),
+                'score': round(score, 3),
+                'feature_types': [f['type'] for f in common_features]
+            }
+
+        except Exception as e:
+            logger.error(f"Hypothesis generation failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def generate_exclusion_volumes(self, receptor_pdb: str, ligand_center: List[float] = None, cutoff: float = 5.0) -> Dict[str, Any]:
+        """
+        Generate exclusion volume spheres from receptor surface.
+        Creates spheres around receptor atoms that would clash with ligand.
+        """
+        try:
+            import numpy as np
+
+            receptor_atoms = []
+            hydrophobic_residues = {'ALA', 'VAL', 'LEU', 'ILE', 'MET', 'PHE', 'TRP', 'TYR', 'PRO'}
+
+            for line in receptor_pdb.split('\n'):
+                if not (line.startswith('ATOM') or line.startswith('HETATM')):
+                    continue
+                try:
+                    resname = line[17:20].strip()
+                    x = float(line[30:38])
+                    y = float(line[38:46])
+                    z = float(line[46:54])
+                    element = line[76:78].strip() or line[12:14].strip()
+                    receptor_atoms.append({
+                        'resname': resname,
+                        'element': element,
+                        'position': [x, y, z]
+                    })
+                except (ValueError, IndexError):
+                    continue
+
+            if not receptor_atoms:
+                return {'success': False, 'error': 'No receptor atoms found'}
+
+            positions = np.array([a['position'] for a in receptor_atoms])
+
+            if ligand_center:
+                lc = np.array(ligand_center)
+                distances = np.linalg.norm(positions - lc, axis=1)
+                nearby_mask = distances < cutoff
+                nearby_atoms = [a for a, m in zip(receptor_atoms, nearby_mask) if m]
+            else:
+                nearby_atoms = receptor_atoms
+
+            exclusion_spheres = []
+            used_positions = []
+
+            for atom in nearby_atoms:
+                pos = np.array(atom['position'])
+                is_redundant = False
+                for used in used_positions:
+                    if np.linalg.norm(pos - used) < 2.0:
+                        is_redundant = True
+                        break
+                if is_redundant:
+                    continue
+
+                radius = 1.5 if atom['element'] == 'C' else 1.7
+                is_hydrophobic = atom['resname'] in hydrophobic_residues
+
+                exclusion_spheres.append({
+                    'center': atom['position'],
+                    'radius': radius,
+                    'color': '#FF6600' if is_hydrophobic else '#CCCCCC',
+                    'type': 'exclusion',
+                    'residue': atom['resname'],
+                    'element': atom['element'],
+                    'alpha': 0.3
+                })
+                used_positions.append(pos)
+
+            return {
+                'success': True,
+                'exclusion_spheres': exclusion_spheres,
+                'n_spheres': len(exclusion_spheres),
+                'n_receptor_atoms': len(receptor_atoms)
+            }
+
+        except Exception as e:
+            logger.error(f"Exclusion volume generation failed: {e}")
+            return {'success': False, 'error': str(e)}
+
 
 # Singleton instance
 _engine = None

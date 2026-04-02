@@ -198,3 +198,24 @@ export async function deleteModel(modelId: string): Promise<{ success: boolean }
   const { data } = await apiClient.delete(`/qsar/models/${modelId}`)
   return data
 }
+
+export async function runYScrambling(request: {
+  smiles_list: string[]
+  activity_column: string
+  model_type?: string
+  n_iterations?: number
+  cv_folds?: number
+}): Promise<any> {
+  const { data } = await apiClient.post('/qsar/validate/y-scrambling', request)
+  return data
+}
+
+export async function getSHAPImportance(modelId: string, topN: number = 20): Promise<any> {
+  const { data } = await apiClient.get(`/qsar/validate/shap/${modelId}`, { params: { top_n: topN } })
+  return data
+}
+
+export async function getWilliamsPlot(modelId: string): Promise<any> {
+  const { data } = await apiClient.get(`/qsar/validate/williams-plot/${modelId}`)
+  return data
+}

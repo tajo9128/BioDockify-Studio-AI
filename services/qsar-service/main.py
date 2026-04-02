@@ -299,6 +299,58 @@ def model_delete(model_id: str):
     return {"success": True, "model_id": model_id}
 
 
+class YScramblingRequest(BaseModel):
+    smiles_list: List[str]
+    activity_column: str
+    model_type: str = "RandomForest"
+    n_iterations: int = 10
+    cv_folds: int = 5
+
+
+@app.post("/validate/y-scrambling")
+def y_scrambling(request: YScramblingRequest):
+    """Run Y-scrambling validation test"""
+    from qsar_engine import y_scrambling_test
+    from descriptors import descriptors_for_smiles_list
+
+    mol_data, feature_names, failed = descriptors_for_smiles_list(
+        request.smiles_list, include_fingerprints=False
+    )
+    if not mol_data:
+        raise HTTPException(400, "No valid molecules")
+
+    y = [m.get(request.activity_column, 0.0) for m in mol_data]
+    X = [[m.get(fn, 0.0) for fn in feature_names] for m in mol_data]
+
+    result = y_scrambling_test(
+        X=X, y=y, feature_names=feature_names,
+        model_type=request.model_type,
+        n_iterations=request.n_iterations,
+        cv_folds=request.cv_folds
+    )
+    return result
+
+
+@app.get("/validate/shap/{model_id}")
+def shap_importance(model_id: str, top_n: int = 20):
+    """Get SHAP feature importances for a model"""
+    from qsar_engine import calculate_shap_importances
+    result = calculate_shap_importances(model_id, top_n)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "SHAP failed"))
+    return result
+
+
+@app.get("/validate/williams-plot/{model_id}")
+def williams_plot(model_id: str):
+    """Generate Williams plot for applicability domain visualization"""
+    from qsar_engine import generate_williams_plot
+    result = generate_williams_plot(model_id)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "Williams plot failed"))
+    return result
+
+
 if __name__ == "__main__":
     import uvicorn
 

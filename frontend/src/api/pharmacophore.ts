@@ -122,3 +122,53 @@ export const SAMPLE_LIBRARY = [
   'OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O', // glucose
   'c1ccccc1', // benzene
 ]
+
+export interface HypothesisResult {
+  success: boolean
+  hypothesis?: Array<{
+    type: string
+    center: number[]
+    radius: number
+    color: string
+    coverage: number
+  }>
+  n_features?: number
+  n_molecules?: number
+  score?: number
+  feature_types?: string[]
+  error?: string
+}
+
+export interface ExclusionVolumeResult {
+  success: boolean
+  exclusion_spheres?: Array<{
+    center: number[]
+    radius: number
+    color: string
+    type: string
+    residue: string
+    element: string
+    alpha: number
+  }>
+  n_spheres?: number
+  n_receptor_atoms?: number
+  error?: string
+}
+
+export async function generateHypothesis(activeSmiles: string[], minFeatures: number = 3, maxFeatures: number = 6): Promise<HypothesisResult> {
+  const { data } = await apiClient.post('/pharmacophore/hypothesis', {
+    active_smiles: activeSmiles,
+    min_features: minFeatures,
+    max_features: maxFeatures
+  })
+  return data
+}
+
+export async function generateExclusionVolumes(receptorPdb: string, ligandCenter?: number[], cutoff: number = 5.0): Promise<ExclusionVolumeResult> {
+  const { data } = await apiClient.post('/pharmacophore/exclusion-volumes', {
+    receptor_pdb: receptorPdb,
+    ligand_center: ligandCenter,
+    cutoff
+  })
+  return data
+}

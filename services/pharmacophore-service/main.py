@@ -197,6 +197,48 @@ def get_feature_info():
     return {"features": features, "total_types": len(features)}
 
 
+class HypothesisRequest(BaseModel):
+    active_smiles: List[str]
+    min_features: int = 3
+    max_features: int = 6
+
+
+@app.post("/hypothesis")
+def generate_hypothesis(request: HypothesisRequest):
+    """Generate pharmacophore hypothesis from multiple active ligands."""
+    try:
+        result = engine.generate_hypothesis(
+            active_smiles=request.active_smiles,
+            min_features=request.min_features,
+            max_features=request.max_features
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Hypothesis generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExclusionVolumeRequest(BaseModel):
+    receptor_pdb: str
+    ligand_center: Optional[List[float]] = None
+    cutoff: float = 5.0
+
+
+@app.post("/exclusion-volumes")
+def generate_exclusion_volumes(request: ExclusionVolumeRequest):
+    """Generate exclusion volume spheres from receptor surface."""
+    try:
+        result = engine.generate_exclusion_volumes(
+            receptor_pdb=request.receptor_pdb,
+            ligand_center=request.ligand_center,
+            cutoff=request.cutoff
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Exclusion volume error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def _get_feature_description(name: str) -> str:
     descriptions = {
         "Donor": "Hydrogen bond donor",

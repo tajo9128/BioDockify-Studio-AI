@@ -13,13 +13,25 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from sklearn.model_selection import cross_val_predict, KFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.svm import SVR
 from sklearn.linear_model import Ridge, Lasso
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, accuracy_score, roc_auc_score, classification_report
 import plotly.graph_objects as go
 import plotly.io as pio
+
+try:
+    from xgboost import XGBRegressor, XGBClassifier
+    HAS_XGBOOST = True
+except ImportError:
+    HAS_XGBOOST = False
+
+try:
+    import shap
+    HAS_SHAP = True
+except ImportError:
+    HAS_SHAP = False
 
 from descriptors import descriptors_for_smiles_list, calculate_descriptors
 from model_store import save_model, load_model
@@ -34,6 +46,10 @@ MODEL_REGISTRY = {
     "SVR": SVR,
     "Ridge": Ridge,
     "Lasso": Lasso,
+    "XGBoost": XGBRegressor if HAS_XGBOOST else None,
+    "RandomForestClassifier": RandomForestClassifier,
+    "GradientBoostingClassifier": GradientBoostingClassifier,
+    "XGBoostClassifier": XGBClassifier if HAS_XGBOOST else None,
 }
 
 DEFAULT_PARAMS = {
@@ -43,6 +59,10 @@ DEFAULT_PARAMS = {
     "Ridge": {"alpha": 1.0},
     "Lasso": {"alpha": 1.0},
     "PLS": {"n_components": 2},
+    "XGBoost": {"n_estimators": 300, "learning_rate": 0.05, "max_depth": 6, "random_state": 42},
+    "RandomForestClassifier": {"n_estimators": 100, "max_depth": 10, "random_state": 42},
+    "GradientBoostingClassifier": {"n_estimators": 100, "max_depth": 5, "random_state": 42},
+    "XGBoostClassifier": {"n_estimators": 300, "learning_rate": 0.05, "max_depth": 6, "random_state": 42},
 }
 
 
@@ -308,4 +328,210 @@ def predict_batch(
         "n_in_domain": n_in_domain,
         "n_warning": n_warning,
         "n_out_of_domain": n_out,
+    }
+
+
+def y_scrambling_test(
+    X: List[List[float]],
+    y: List[float],
+    feature_names: List[str],
+    model_type: str,
+    n_iterations: int = 10,
+    cv_folds: int = 5,
+    model_params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Y-scrambling test to validate model non-randomness.
+    Randomizes target variable and trains models to check if R2 stays low.
+    """
+    X_arr = np.array(X, dtype=float)
+    y_arr = np.array(y, dtype=float)
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_arr)
+
+    scrambled_r2_scores = []
+    kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+
+    for i in range(n_iterations):
+        y_scrambled = np.random.permutation(y_arr)
+        model = _get_model(model_type, model_params)
+        try:
+            y_pred_cv = cross_val_predict(model, X_scaled, y_scrambled, cv=kfold)
+            r2 = r2_score(y_scrambled, y_pred_cv)
+            scrambled_r2_scores.append(float(r2))
+        except Exception:
+            scrambled_r2_scores.append(0.0)
+
+    mean_r2 = float(np.mean(scrambled_r2_scores))
+    std_r2 = float(np.std(scrambled_r2_scores))
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=scrambled_r2_scores, nbinsx=10,
+        marker=dict(color="orange", opacity=0.7),
+        name="Scrambled R²"
+    ))
+    fig.update_layout(
+        title=dict(text="Y-Scrambling R² Distribution", font=dict(size=14)),
+        xaxis_title="R² (scrambled)",
+        yaxis_title="Count",
+        width=500, height=400,
+        margin=dict(l=60, r=20, t=40, b=60),
+    )
+
+    return {
+        "n_iterations": n_iterations,
+        "mean_r2": round(mean_r2, 4),
+        "std_r2": round(std_r2, 4),
+        "max_r2": round(float(np.max(scrambled_r2_scores)), 4),
+        "min_r2": round(float(np.min(scrambled_r2_scores)), 4),
+        "scrambled_r2_scores": [round(s, 4) for s in scrambled_r2_scores],
+        "is_valid": mean_r2 < 0.2,
+        "histogram_plot": pio.to_json(fig),
+    }
+
+
+def calculate_shap_importances(
+    model_id: str,
+    top_n: int = 20,
+) -> Dict[str, Any]:
+    """
+    Calculate SHAP feature importances for a trained model.
+    """
+    if not HAS_SHAP:
+        return {"success": False, "error": "SHAP not installed"}
+
+    result = load_model(model_id)
+    if result is None:
+        return {"success": False, "error": f"Model {model_id} not found"}
+
+    model_obj = result["model_obj"]
+    model = model_obj["model"]
+    scaler = model_obj["scaler"]
+    feature_names = model_obj["feature_names"]
+    X_train = model_obj.get("X_train")
+
+    if X_train is None:
+        return {"success": False, "error": "No training data stored for SHAP"}
+
+    X_scaled = scaler.transform(X_train)
+
+    try:
+        if hasattr(model, "predict_proba"):
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_scaled)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+            mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
+        else:
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_scaled)
+            mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
+
+        feature_importance = sorted(
+            zip(feature_names, mean_abs_shap.tolist()),
+            key=lambda x: x[1],
+            reverse=True
+        )[:top_n]
+
+        fig = go.Figure(go.Bar(
+            x=[v for _, v in feature_importance[::-1]],
+            y=[n for n, _ in feature_importance[::-1]],
+            orientation='h',
+            marker=dict(color='steelblue')
+        ))
+        fig.update_layout(
+            title=dict(text="SHAP Feature Importance", font=dict(size=14)),
+            xaxis_title="Mean |SHAP value|",
+            yaxis_title="Feature",
+            width=600, height=max(400, top_n * 25),
+            margin=dict(l=150, r=20, t=40, b=60),
+        )
+
+        return {
+            "success": True,
+            "model_id": model_id,
+            "top_features": [{"feature": n, "importance": round(v, 4)} for n, v in feature_importance],
+            "shap_plot": pio.to_json(fig),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": f"SHAP calculation failed: {str(e)}"}
+
+
+def generate_williams_plot(
+    model_id: str,
+) -> Dict[str, Any]:
+    """
+    Generate Williams plot (standardized residuals vs leverage) for AD visualization.
+    """
+    result = load_model(model_id)
+    if result is None:
+        return {"success": False, "error": f"Model {model_id} not found"}
+
+    model_obj = result["model_obj"]
+    model = model_obj["model"]
+    scaler = model_obj["scaler"]
+    feature_names = model_obj["feature_names"]
+    X_train = model_obj.get("X_train")
+
+    if X_train is None:
+        return {"success": False, "error": "No training data stored"}
+
+    X_scaled = scaler.transform(X_train)
+    y_train = model_obj.get("y_train")
+    if y_train is None:
+        return {"success": False, "error": "No training targets stored"}
+
+    y_train = np.array(y_train)
+    y_pred = model.predict(X_scaled)
+    residuals = y_train - y_pred
+    std_residuals = residuals / (np.std(residuals) + 1e-10)
+
+    H = X_scaled @ np.linalg.pinv(X_scaled.T @ X_train) @ X_scaled.T
+    leverages = np.diag(H)
+    h_threshold = 3 * (X_scaled.shape[1] + 1) / X_scaled.shape[0]
+    s_threshold = 3.0
+
+    fig = go.Figure()
+    in_domain = (np.abs(std_residuals) <= s_threshold) & (leverages <= h_threshold)
+    warning = ~in_domain
+
+    fig.add_trace(go.Scatter(
+        x=leverages[in_domain], y=std_residuals[in_domain],
+        mode='markers', marker=dict(color='steelblue', size=8),
+        name='In Domain'
+    ))
+    if np.any(warning):
+        fig.add_trace(go.Scatter(
+            x=leverages[warning], y=std_residuals[warning],
+            mode='markers', marker=dict(color='red', size=10, symbol='x'),
+            name='Out of Domain'
+        ))
+
+    fig.add_shape(type='line', x0=0, x1=max(leverages)*1.1, y0=h_threshold, y1=h_threshold,
+                  line=dict(color='orange', dash='dash'))
+    fig.add_shape(type='line', x0=h_threshold, x1=h_threshold, y0=min(std_residuals)*1.1, y1=max(std_residuals)*1.1,
+                  line=dict(color='orange', dash='dash'))
+
+    fig.update_layout(
+        title=dict(text="Williams Plot (Applicability Domain)", font=dict(size=14)),
+        xaxis_title="Leverage (h)",
+        yaxis_title="Standardized Residuals",
+        width=500, height=400,
+        margin=dict(l=60, r=20, t=40, b=60),
+    )
+
+    n_in_domain = int(np.sum(in_domain))
+    n_warning = int(np.sum(warning))
+
+    return {
+        "success": True,
+        "model_id": model_id,
+        "n_in_domain": n_in_domain,
+        "n_out_of_domain": n_warning,
+        "h_threshold": round(float(h_threshold), 3),
+        "s_threshold": s_threshold,
+        "williams_plot": pio.to_json(fig),
     }
