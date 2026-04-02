@@ -291,6 +291,183 @@ def get_ad4_atom_type(atomic_num: int) -> str:
     return ad_types.get(atomic_num, 'A')
 
 
+def calculate_hydrophobic_enclosure_score(
+    ligand_mol,
+    receptor_pdbqt: str,
+    cutoff: float = 4.5
+) -> float:
+    """
+    Calculate hydrophobic enclosure term similar to GlideScore.
+    Rewards ligands that bury hydrophobic atoms in hydrophobic pockets.
+    Returns: Negative score (favorable) if hydrophobic atoms are well-enclosed.
+    """
+    try:
+        import numpy as np
+        from rdkit import Chem
+
+        hydrophobic_residues = {'ALA', 'VAL', 'LEU', 'ILE', 'MET', 'PHE', 'TRP', 'TYR', 'PRO'}
+        receptor_atoms = []
+
+        for line in receptor_pdbqt.split('\n'):
+            if line.startswith('ATOM') or line.startswith('HETATM'):
+                try:
+                    resname = line[17:20].strip()
+                    if resname in hydrophobic_residues:
+                        x = float(line[30:38])
+                        y = float(line[38:46])
+                        z = float(line[46:54])
+                        receptor_atoms.append(np.array([x, y, z]))
+                except (ValueError, IndexError):
+                    continue
+
+        if not receptor_atoms:
+            return 0.0
+
+        receptor_coords = np.array(receptor_atoms)
+
+        hydrophobic_ligand_atoms = []
+        for atom in ligand_mol.GetAtoms():
+            symbol = atom.GetSymbol()
+            if symbol in ['C', 'S', 'Cl', 'Br', 'I']:
+                is_polar = False
+                for neighbor in atom.GetNeighbors():
+                    if neighbor.GetSymbol() in ['O', 'N'] and neighbor.GetTotalNumHs() == 0:
+                        is_polar = True
+                        break
+                if not is_polar:
+                    pos = ligand_mol.GetConformer().GetAtomPosition(atom.GetIdx())
+                    hydrophobic_ligand_atoms.append(np.array([pos.x, pos.y, pos.z]))
+
+        if not hydrophobic_ligand_atoms:
+            return 0.0
+
+        enclosure_score = 0.0
+        for lig_pos in hydrophobic_ligand_atoms:
+            distances = np.linalg.norm(receptor_coords - lig_pos, axis=1)
+            if np.any(distances < cutoff):
+                min_dist = np.min(distances[distances < cutoff])
+                enclosure_score += (cutoff - min_dist) / cutoff
+
+        n_hydrophobic = len(hydrophobic_ligand_atoms)
+        if n_hydrophobic > 0:
+            enclosure_score = -0.5 * (enclosure_score / n_hydrophobic)
+
+        return round(enclosure_score, 4)
+    except Exception as e:
+        logger.warning(f"Hydrophobic enclosure calculation failed: {e}")
+        return 0.0
+
+
+def calculate_rotatable_bond_penalty(num_rotatable: int, max_penalty: float = 0.5) -> float:
+    """
+    Penalize excessive conformational flexibility (entropy loss upon binding).
+    GlideScore uses: penalty = 0.058 * N_rot (capped at ~1.5)
+    """
+    penalty = min(0.058 * num_rotatable, max_penalty)
+    return round(penalty, 4)
+
+
+def calculate_lipophilic_contact_term(
+    ligand_mol,
+    receptor_pdbqt: str,
+    contact_cutoff: float = 4.0
+) -> float:
+    """
+    Reward favorable lipophilic contacts between ligand and receptor.
+    Similar to Glide's Lipo term.
+    """
+    try:
+        import numpy as np
+
+        ligand_coords = []
+        ligand_lipophilic = []
+
+        for atom in ligand_mol.GetAtoms():
+            pos = ligand_mol.GetConformer().GetAtomPosition(atom.GetIdx())
+            ligand_coords.append([pos.x, pos.y, pos.z])
+            symbol = atom.GetSymbol()
+            is_lipophilic = symbol in ['C', 'S', 'Cl', 'Br', 'I']
+            if is_lipophilic:
+                for neighbor in atom.GetNeighbors():
+                    if neighbor.GetSymbol() in ['O', 'N', 'P']:
+                        is_lipophilic = False
+                        break
+            ligand_lipophilic.append(1.0 if is_lipophilic else 0.0)
+
+        if not ligand_coords:
+            return 0.0
+
+        ligand_coords = np.array(ligand_coords)
+        ligand_lipophilic = np.array(ligand_lipophilic)
+
+        receptor_lipophilic = []
+        lipophilic_elements = {'C', 'S'}
+
+        for line in receptor_pdbqt.split('\n'):
+            if line.startswith('ATOM') or line.startswith('HETATM'):
+                try:
+                    element = line[76:78].strip() or line[12:14].strip()
+                    if element in lipophilic_elements:
+                        x = float(line[30:38])
+                        y = float(line[38:46])
+                        z = float(line[46:54])
+                        receptor_lipophilic.append([x, y, z])
+                except (ValueError, IndexError):
+                    continue
+
+        if not receptor_lipophilic:
+            return 0.0
+
+        receptor_lipophilic = np.array(receptor_lipophilic)
+
+        lipo_score = 0.0
+        for i, (lig_pos, is_lipo) in enumerate(zip(ligand_coords, ligand_lipophilic)):
+            if is_lipo < 0.5:
+                continue
+            distances = np.linalg.norm(receptor_lipophilic - lig_pos, axis=1)
+            close_contacts = distances[distances < contact_cutoff]
+            for dist in close_contacts:
+                lipo_score += (contact_cutoff - dist) / contact_cutoff
+
+        return round(-0.3 * lipo_score, 4)
+    except Exception as e:
+        logger.warning(f"Lipophilic contact calculation failed: {e}")
+        return 0.0
+
+
+def apply_composite_scoring(
+    results: List[Dict],
+    ligand_mol,
+    receptor_pdbqt_content: str,
+    num_rotatable_bonds: int = 0
+) -> List[Dict]:
+    """
+    Apply composite scoring to docking results.
+    Adds hydrophobic_term, rotatable_penalty, lipo_contact, and composite_score to each pose.
+    """
+    if not ligand_mol or not receptor_pdbqt_content:
+        for pose in results:
+            pose['hydrophobic_term'] = 0.0
+            pose['rotatable_penalty'] = 0.0
+            pose['lipo_contact'] = 0.0
+            pose['composite_score'] = pose.get('vina_score', 0)
+        return results
+
+    hydrophobic = calculate_hydrophobic_enclosure_score(ligand_mol, receptor_pdbqt_content)
+    rot_penalty = calculate_rotatable_bond_penalty(num_rotatable_bonds)
+    lipo = calculate_lipophilic_contact_term(ligand_mol, receptor_pdbqt_content)
+
+    for pose in results:
+        pose['hydrophobic_term'] = hydrophobic
+        pose['rotatable_penalty'] = rot_penalty
+        pose['lipo_contact'] = lipo
+        base_score = pose.get('vina_score', 0)
+        pose['composite_score'] = round(base_score + hydrophobic + rot_penalty + lipo, 4)
+
+    results.sort(key=lambda x: x.get('composite_score', x.get('vina_score', 0)))
+    return results
+
+
 def generate_vina_config(
     receptor_pdbqt: str,
     ligand_pdbqt: str,
@@ -775,18 +952,20 @@ def smart_dock(
             "details": "No receptor provided - using default"
         })
     
+    ligand_prep_result = None
+    
     logger.info("[SmartDock] STEP 2: Preparing ligand...")
     if isinstance(ligand_content, str) and os.path.exists(ligand_content):
         with open(ligand_content, 'r') as f:
             ligand_content = f.read()
     
-    prep_result = prepare_ligand_from_content(ligand_content, input_format, output_dir)
-    if prep_result:
-        ligand_pdbqt = prep_result['pdbqt_path']
+    ligand_prep_result = prepare_ligand_from_content(ligand_content, input_format, output_dir)
+    if ligand_prep_result:
+        ligand_pdbqt = ligand_prep_result['pdbqt_path']
         pipeline["pipeline_stages"].append({
             "stage": "ligand_preparation",
             "status": "completed",
-            "details": f"{prep_result.get('num_rotatable_bonds', 'N/A')} rotatable bonds"
+            "details": f"{ligand_prep_result.get('num_rotatable_bonds', 'N/A')} rotatable bonds"
         })
         logger.info(f"[SmartDock] Ligand prepared: {ligand_pdbqt}")
     else:
@@ -959,6 +1138,30 @@ def smart_dock(
         pipeline["error"] = vina_result.get("error", "Vina docking failed")
         pipeline["results"] = generate_simulated_results(num_modes)
         pipeline["routing_decision"] = "simulated (Vina failed)"
+    
+    # Apply composite scoring (always-on)
+    if pipeline["results"]:
+        ligand_mol = ligand_prep_result.get('mol') if ligand_prep_result else None
+        num_rotatable = ligand_prep_result.get('num_rotatable_bonds', 0) if ligand_prep_result else 0
+        
+        receptor_pdbqt_content = ""
+        if receptor_pdbqt and os.path.exists(receptor_pdbqt):
+            try:
+                with open(receptor_pdbqt, 'r') as f:
+                    receptor_pdbqt_content = f.read()
+            except Exception:
+                pass
+        
+        pipeline["results"] = apply_composite_scoring(
+            pipeline["results"],
+            ligand_mol,
+            receptor_pdbqt_content,
+            num_rotatable
+        )
+        
+        if pipeline["results"]:
+            pipeline["best_score"] = pipeline["results"][0].get('composite_score', pipeline["best_score"])
+            logger.info(f"[SmartDock] Composite scoring applied: best={pipeline['best_score']:.4f}")
     
     return pipeline
 

@@ -993,6 +993,11 @@ def api_docking_run(req: DockingRunRequest):
             "routing_decision": docking_result.get("routing_decision", ""),
             "pipeline_stages": docking_result.get("pipeline_stages", []),
             "results": results,
+            "scoring_breakdown": {
+                "method": "composite",
+                "terms": ["vina_score", "hydrophobic_term", "rotatable_penalty", "lipo_contact"],
+                "formula": "composite_score = vina_score + hydrophobic_term + rotatable_penalty + lipo_contact"
+            } if results and "composite_score" in results[0] else None,
             "files": docking_result.get("files", {}),
             "download_urls": docking_result.get("download_urls", {}),
             "receptor_file": docking_result.get("files", {}).get("receptor", None),
