@@ -33,9 +33,11 @@ from db import (
     init_db,
     create_job,
     update_job_status,
+    update_job_files,
     add_docking_result,
     add_interaction,
     get_job,
+    get_job_full,
     get_all_jobs,
     get_docking_results,
     get_interactions,
@@ -85,6 +87,9 @@ logger.info(f"Assets directory: {ASSETS_DIR}")
 
 # Mount static files - mount assets first so it takes priority
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+# Serve docking output files for download
+app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
 
 
 @app.get("/")
@@ -984,10 +989,13 @@ class DockingRunRequest(BaseModel):
 
 @app.post("/api/docking/run")
 def api_docking_run(req: DockingRunRequest):
-    """API endpoint for running docking with proper preparation pipeline"""
+    """
+    Start docking asynchronously. Returns {job_id, status:'accepted'} immediately.
+    Poll GET /dock/{job_id}/status or stream GET /dock/{job_id}/stream for progress.
+    Fetch full results via GET /api/docking/result/{job_id} when completed.
+    """
     logger.info(f"API docking run: scoring={req.scoring}")
     job_id = f"dock_{uuid.uuid4().hex[:8]}"
-
     job_name = f"docking_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     try:
@@ -1003,154 +1011,322 @@ def api_docking_run(req: DockingRunRequest):
         logger.error(f"Failed to save job to database: {e}")
 
     os.makedirs(STORAGE_DIR, exist_ok=True)
+    DockingProgress.start_job(job_id)
+    DockingProgress.update_progress(job_id, 5, "Job accepted, preparing structures...")
 
-    try:
-        from docking_engine import (
-            smart_dock,
-            prepare_protein_from_content,
-            prepare_ligand_from_content,
-            smiles_to_3d,
-            check_gpu_cuda,
-            check_vina,
-        )
+    def _run_bg():
+        try:
+            from docking_engine import smart_dock, smiles_to_3d, check_gpu_cuda
 
-        gpu_info = check_gpu_cuda()
-        vina_available = check_vina()
+            gpu_info = check_gpu_cuda()
+            receptor_content = req.receptor_content or None
+            ligand_content = None
+            input_format = "sdf"
 
-        logger.info(f"[Docking] GPU: {gpu_info['available']}, Vina: {vina_available}")
-
-        receptor_content = None
-        ligand_content = None
-        input_format = "sdf"
-
-        if req.receptor_content:
-            receptor_content = req.receptor_content
-            logger.info(f"[Docking] Protein provided: {len(receptor_content)} chars")
-
-        if req.smiles:
-            logger.info(f"[Docking] SMILES input: {req.smiles[:50]}...")
-            result = smiles_to_3d(req.smiles)
-            if result:
-                ligand_content = result["pdb"]
-                input_format = "pdb"
-                logger.info(
-                    f"[Docking] SMILES converted to 3D: {result['num_atoms']} atoms"
-                )
+            DockingProgress.update_progress(job_id, 15, "Preparing ligand...")
+            if req.smiles:
+                r3d = smiles_to_3d(req.smiles)
+                if r3d:
+                    ligand_content = r3d["pdb"]
+                    input_format = "pdb"
+                else:
+                    DockingProgress.set_status(job_id, "failed", "Invalid SMILES")
+                    update_job_status(job_id, "failed")
+                    return
+            elif req.ligand_content:
+                ligand_content = req.ligand_content
             else:
-                return {"job_id": job_id, "status": "failed", "error": "Invalid SMILES"}
+                DockingProgress.set_status(job_id, "failed", "No ligand provided")
+                update_job_status(job_id, "failed")
+                return
 
-        elif req.ligand_content:
-            ligand_content = req.ligand_content
-            logger.info(f"[Docking] Ligand provided: {len(ligand_content)} chars")
-
-        if not ligand_content:
-            return {"job_id": job_id, "status": "failed", "error": "No ligand provided"}
-
-        docking_result = smart_dock(
-            receptor_content=receptor_content,
-            ligand_content=ligand_content,
-            input_format=input_format,
-            center_x=req.center_x,
-            center_y=req.center_y,
-            center_z=req.center_z,
-            size_x=req.size_x,
-            size_y=req.size_y,
-            size_z=req.size_z,
-            exhaustiveness=req.exhaustiveness,
-            num_modes=req.num_modes,
-            output_dir=STORAGE_DIR,
-            enable_flexibility=req.enable_flexibility,
-            constraints=req.constraints,
-        )
-
-        logger.info(
-            f"[Docking] Pipeline stages: {[s['stage'] for s in docking_result.get('pipeline_stages', [])]}"
-        )
-
-        results = docking_result.get("results", [])
-        best_score = docking_result.get("best_score") or (
-            results[0]["vina_score"] if results else 0
-        )
-
-        logger.info(f"[Docking] Saving {len(results)} results for job {job_id}")
-        saved_count = 0
-        docking_file = docking_result.get("files", {}).get("docking", "")
-        pdb_data = ""
-        if docking_file and os.path.exists(docking_file):
-            with open(docking_file, "r") as f:
-                pdb_data = f.read()
-            logger.info(
-                f"[Docking] Loaded PDB data: {len(pdb_data)} chars from {docking_file}"
+            DockingProgress.update_progress(job_id, 30, "Running docking engine...")
+            docking_result = smart_dock(
+                receptor_content=receptor_content,
+                ligand_content=ligand_content,
+                input_format=input_format,
+                center_x=req.center_x, center_y=req.center_y, center_z=req.center_z,
+                size_x=req.size_x, size_y=req.size_y, size_z=req.size_z,
+                exhaustiveness=req.exhaustiveness,
+                num_modes=req.num_modes,
+                output_dir=STORAGE_DIR,
+                enable_flexibility=req.enable_flexibility,
+                constraints=req.constraints,
             )
 
-        for r in results:
-            try:
-                success = add_docking_result(
-                    job_id,
-                    r.get("mode", 1),
-                    "ligand",
-                    vina_score=r.get("vina_score"),
-                    gnina_score=r.get("gnina_score"),
-                    rf_score=r.get("rf_score"),
-                    pdb_data=pdb_data if pdb_data else None,
-                    hydrophobic_term=r.get("hydrophobic_term"),
-                    rotatable_penalty=r.get("rotatable_penalty"),
-                    lipo_contact=r.get("lipo_contact"),
-                    final_score=r.get("final_score"),
-                    composite_score=r.get("composite_score"),
-                    constraint_penalty=r.get("constraint_penalty"),
-                )
-                if success:
-                    saved_count += 1
-                else:
-                    logger.error(
-                        f"add_docking_result returned False for mode {r.get('mode')}"
+            DockingProgress.update_progress(job_id, 85, "Saving results...")
+            results = docking_result.get("results", [])
+            best_score = docking_result.get("best_score") or (
+                results[0]["vina_score"] if results else 0
+            )
+
+            docking_file = docking_result.get("files", {}).get("docking", "")
+            pdb_data = ""
+            if docking_file and os.path.exists(docking_file):
+                with open(docking_file, "r") as f:
+                    pdb_data = f.read()
+
+            for r in results:
+                try:
+                    add_docking_result(
+                        job_id, r.get("mode", 1), "ligand",
+                        vina_score=r.get("vina_score"),
+                        gnina_score=r.get("gnina_score"),
+                        rf_score=r.get("rf_score"),
+                        pdb_data=pdb_data or None,
+                        hydrophobic_term=r.get("hydrophobic_term"),
+                        rotatable_penalty=r.get("rotatable_penalty"),
+                        lipo_contact=r.get("lipo_contact"),
+                        final_score=r.get("final_score"),
+                        composite_score=r.get("composite_score"),
+                        constraint_penalty=r.get("constraint_penalty"),
                     )
-            except Exception as e:
-                logger.error(f"Failed to save result: {e}")
+                except Exception as ex:
+                    logger.error(f"Failed to save result mode {r.get('mode')}: {ex}")
 
-        logger.info(f"[Docking] Saved {saved_count}/{len(results)} results to database")
+            update_job_status(job_id, "completed", best_score)
 
-        update_job_status(job_id, "completed", best_score)
+            # Persist files + log to DB so history survives server restarts
+            log_file = docking_result.get("files", {}).get("log", "")
+            log_text = ""
+            if log_file and os.path.exists(log_file):
+                try:
+                    with open(log_file, "r") as f:
+                        log_text = f.read()
+                except Exception:
+                    pass
+            try:
+                update_job_files(
+                    job_id,
+                    files_json=json.dumps(docking_result.get("files", {})),
+                    log_text=log_text,
+                )
+            except Exception as ex:
+                logger.warning(f"update_job_files failed: {ex}")
 
+            full_payload = {
+                "job_id": job_id,
+                "status": "completed",
+                "engine": docking_result.get("engine_used", "vina"),
+                "gpu_info": gpu_info,
+                "best_score": best_score,
+                "routing_decision": docking_result.get("routing_decision", ""),
+                "pipeline_stages": docking_result.get("pipeline_stages", []),
+                "results": results,
+                "files": docking_result.get("files", {}),
+                "download_urls": docking_result.get("download_urls", {}),
+                "message": f"Docking complete - {len(results)} poses generated",
+            }
+            DockingProgress.set_status(
+                job_id, "completed",
+                f"Done - {len(results)} poses, best {best_score:.2f} kcal/mol",
+                results=results,
+                files=docking_result.get("files", {}),
+                download_urls=docking_result.get("download_urls", {}),
+            )
+            with DockingProgress._lock:
+                DockingProgress._jobs[job_id]["full_payload"] = full_payload
+
+        except Exception as e:
+            logger.error(f"[Docking] Background error: {e}")
+            DockingProgress.set_status(job_id, "failed", str(e))
+            update_job_status(job_id, "failed")
+
+    threading.Thread(target=_run_bg, daemon=True).start()
+    return {
+        "job_id": job_id,
+        "status": "accepted",
+        "poll_url": f"/dock/{job_id}/status",
+        "stream_url": f"/dock/{job_id}/stream",
+        "result_url": f"/api/docking/result/{job_id}",
+    }
+
+
+@app.get("/api/docking/result/{job_id}")
+def api_docking_result(job_id: str):
+    """Fetch full result payload for a completed docking job.
+    Falls back to DB when the in-memory progress entry is gone (server restart).
+    """
+    progress = DockingProgress.get_progress(job_id)
+    if progress.get("status") == "completed" and "full_payload" in progress:
+        return progress["full_payload"]
+    if progress.get("status") == "failed":
+        return {"job_id": job_id, "status": "failed",
+                "error": progress.get("message", "Unknown error")}
+
+    # In-memory miss — try DB
+    row = get_job_full(job_id)
+    if row and row.get("status") == "completed":
+        files = {}
+        try:
+            files = json.loads(row["files_json"]) if row.get("files_json") else {}
+        except Exception:
+            pass
+        results = [
+            {
+                "mode": r.get("pose_id", i + 1),
+                "vina_score": r.get("vina_score"),
+                "gnina_score": r.get("gnina_score"),
+                "rf_score": r.get("rf_score"),
+                "hydrophobic_term": r.get("hydrophobic_term"),
+                "rotatable_penalty": r.get("rotatable_penalty"),
+                "lipo_contact": r.get("lipo_contact"),
+                "final_score": r.get("final_score"),
+                "composite_score": r.get("composite_score"),
+                "constraint_penalty": r.get("constraint_penalty"),
+            }
+            for i, r in enumerate(row.get("results", []))
+        ]
+        best = row.get("binding_energy")
         return {
             "job_id": job_id,
             "status": "completed",
-            "engine": docking_result.get("engine_used", "vina"),
-            "gpu_info": gpu_info,
-            "best_score": best_score,
-            "routing_decision": docking_result.get("routing_decision", ""),
-            "pipeline_stages": docking_result.get("pipeline_stages", []),
+            "engine": row.get("engine", "vina"),
+            "best_score": best,
             "results": results,
-            "scoring_breakdown": {
-                "method": "composite",
-                "terms": [
-                    "vina_score",
-                    "hydrophobic_term",
-                    "rotatable_penalty",
-                    "lipo_contact",
-                ],
-                "formula": "composite_score = vina_score + hydrophobic_term + rotatable_penalty + lipo_contact",
-            }
-            if results and "composite_score" in results[0]
-            else None,
-            "files": docking_result.get("files", {}),
-            "download_urls": docking_result.get("download_urls", {}),
-            "receptor_file": docking_result.get("files", {}).get("receptor", None),
-            "ligand_file": docking_result.get("files", {}).get("ligand", None),
-            "message": f"Docking complete - {len(results)} poses generated",
+            "files": files,
+            "download_urls": _files_to_download_urls(files),
+            "message": f"Restored from history — {len(results)} poses",
         }
+    if row and row.get("status") == "failed":
+        return {"job_id": job_id, "status": "failed", "error": "Job failed"}
 
-    except ImportError as e:
-        logger.error(f"[Docking] Import error: {e}")
+    return {"job_id": job_id, "status": progress.get("status", "unknown"),
+            "message": progress.get("message", "")}
+
+
+def _files_to_download_urls(files: dict) -> dict:
+    """Convert absolute file paths to /storage/... download URLs."""
+    urls = {}
+    for key, path in (files or {}).items():
+        if path and os.path.exists(path):
+            fname = os.path.basename(path)
+            urls[key] = f"/storage/{fname}"
+    return urls
+
+
+@app.get("/api/jobs/{job_id}/full")
+def api_job_full(job_id: str):
+    """Return complete job data from DB including all poses and download links."""
+    row = get_job_full(job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+    files = {}
+    try:
+        files = json.loads(row["files_json"]) if row.get("files_json") else {}
+    except Exception:
+        pass
+    results = [
+        {
+            "mode": r.get("pose_id", i + 1),
+            "vina_score": r.get("vina_score"),
+            "gnina_score": r.get("gnina_score"),
+            "rf_score": r.get("rf_score"),
+            "hydrophobic_term": r.get("hydrophobic_term"),
+            "rotatable_penalty": r.get("rotatable_penalty"),
+            "lipo_contact": r.get("lipo_contact"),
+            "final_score": r.get("final_score"),
+            "composite_score": r.get("composite_score"),
+            "constraint_penalty": r.get("constraint_penalty"),
+        }
+        for i, r in enumerate(row.get("results", []))
+    ]
+    return {
+        "job_id": job_id,
+        "job_name": row.get("job_name"),
+        "receptor_name": row.get("receptor_name") or row.get("receptor_file"),
+        "ligand_name": row.get("ligand_name") or row.get("ligand_file"),
+        "status": row.get("status"),
+        "engine": row.get("engine"),
+        "best_score": row.get("binding_energy"),
+        "created_at": row.get("created_at"),
+        "completed_at": row.get("completed_at"),
+        "results": results,
+        "files": files,
+        "download_urls": _files_to_download_urls(files),
+        "log_text": row.get("log_text"),
+    }
+
+
+class JobExplainRequest(BaseModel):
+    job_id: str
+    question: str
+
+
+@app.post("/api/ai/job-explain")
+def api_ai_job_explain(req: JobExplainRequest):
+    """Ask the AI assistant a question about a specific docking job."""
+    row = get_job_full(req.job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    results = row.get("results", [])
+    scores_text = ""
+    for r in results[:10]:
+        scores_text += (
+            f"  Pose {r.get('pose_id', '?')}: "
+            f"Vina={r.get('vina_score'):.2f if r.get('vina_score') is not None else 'N/A'} "
+            f"GNINA={r.get('gnina_score'):.2f if r.get('gnina_score') is not None else 'N/A'} "
+            f"Composite={r.get('composite_score'):.3f if r.get('composite_score') is not None else 'N/A'}\n"
+        ) if False else (
+            f"  Pose {r.get('pose_id', '?')}: "
+            f"Vina={r.get('vina_score')}, GNINA={r.get('gnina_score')}, "
+            f"Composite={r.get('composite_score')}\n"
+        )
+
+    log_snippet = (row.get("log_text") or "")[:2000]
+
+    context = f"""You are BioDockify AI, an expert computational chemistry and drug discovery assistant.
+
+The user is asking about docking job ID: {req.job_id}
+Job name: {row.get('job_name')}
+Receptor: {row.get('receptor_name') or row.get('receptor_file', 'unknown')}
+Ligand: {row.get('ligand_name') or row.get('ligand_file', 'unknown')}
+Status: {row.get('status')}
+Engine: {row.get('engine')}
+Best binding energy: {row.get('binding_energy')} kcal/mol
+Created: {row.get('created_at')}
+Completed: {row.get('completed_at')}
+
+Docking poses ({len(results)} total):
+{scores_text if scores_text else '  No pose data available.'}
+
+Log excerpt:
+{log_snippet if log_snippet else '  No log available.'}
+
+User question: {req.question}
+
+Provide a clear, expert explanation. If discussing binding energy, note that more negative values indicate stronger binding (typically < -7 kcal/mol is considered good). If the user asks about errors, analyze the log excerpt for clues."""
+
+    try:
+        from ai.llm_router import get_router
+        router = get_router()
+        result = router.chat(context)
         return {
-            "job_id": job_id,
-            "status": "failed",
-            "error": f"Import error: {str(e)}",
+            "job_id": req.job_id,
+            "answer": result.get("response", ""),
+            "provider": result.get("provider", "offline"),
         }
     except Exception as e:
-        logger.error(f"[Docking] Error: {e}")
-        return {"job_id": job_id, "status": "failed", "error": str(e)}
+        logger.error(f"AI job explain failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BindingSiteRequest(BaseModel):
+    receptor_content: str
+
+
+@app.post("/api/docking/binding-site")
+def api_detect_binding_site(req: BindingSiteRequest):
+    """Detect binding site center and grid box from a PDB receptor string."""
+    try:
+        from docking_engine import detect_binding_site
+        return detect_binding_site(req.receptor_content)
+    except Exception as e:
+        logger.error(f"Binding site detection error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 
 @app.post("/api/chem/dock")

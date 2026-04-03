@@ -15,10 +15,12 @@ interface DockingJob {
   engine: string
   best_score: number | null
   created_at: string
+  completed_at?: string
   results?: any[]
   download_urls?: any
   receptor_content?: string
   ligand_pdb?: string
+  log_text?: string
 }
 
 interface DockingResult {
@@ -72,6 +74,15 @@ export function Docking() {
   const [constraints, setConstraints] = useState<any[]>([])
   const [showCartoon, setShowCartoon] = useState(true)
   const [showSurface, setShowSurface] = useState(false)
+  const [selectedPoseIdx, setSelectedPoseIdx] = useState(0)
+  const nglStageRef = useRef<any>(null)
+
+  // AI Job Assistant state
+  const [aiQuestion, setAiQuestion] = useState('')
+  const [aiAnswer, setAiAnswer] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiJobId, setAiJobId] = useState('')
+  const [showAIPanel, setShowAIPanel] = useState(false)
   
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false)
@@ -94,6 +105,18 @@ export function Docking() {
       init3DViewer()
     }
   }, [workflowStage, selectedJob])
+
+  // Re-render viewer when toggles change
+  useEffect(() => {
+    if (nglStageRef.current) {
+      nglStageRef.current.eachComponent((comp: any) => {
+        comp.eachRepresentation((rep: any) => {
+          if (rep.name === 'cartoon') rep.setVisibility(showCartoon)
+          if (rep.name === 'surface') rep.setVisibility(showSurface)
+        })
+      })
+    }
+  }, [showCartoon, showSurface])
 
   const fetchJobs = async () => {
     try {
@@ -138,6 +161,20 @@ export function Docking() {
     setReceptorPreview({ atoms, residues: Math.max(residues, 1) })
   }
 
+  const fetchLigandProps = async (smiles: string) => {
+    try {
+      const res = await fetch('/api/chem/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smiles })
+      })
+      const d = await res.json()
+      if (d && !d.error) {
+        setLigandPreview({ atoms: d.num_atoms || 0, heavy_atoms: d.heavy_atoms || 0, mw: Math.round(d.mw || 0) })
+      }
+    } catch { /* keep existing preview */ }
+  }
+
   const handleLigandUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -146,16 +183,19 @@ export function Docking() {
     setLigandFile(file)
     setLigandContent(content)
     setLigandSmiles('')
-    
-    // Preview from SDF content
-    setLigandPreview({ atoms: 20, heavy_atoms: 15, mw: 250 })
+    setLigandPreview({ atoms: 0, heavy_atoms: 0, mw: 0 })
+
+    // Extract SMILES from SDF for preview
+    const sdfSmiles = content.match(/^> +<SMILES>\s*\n([^\n]+)/m)?.[1]
+    if (sdfSmiles) fetchLigandProps(sdfSmiles.trim())
   }
 
   const handleSmilesSelect = async (smiles: string, _name: string) => {
     setLigandSmiles(smiles)
     setLigandFile(null)
     setLigandContent('')
-    setLigandPreview({ atoms: 15, heavy_atoms: 12, mw: 180 })
+    setLigandPreview({ atoms: 0, heavy_atoms: 0, mw: 0 })
+    fetchLigandProps(smiles)
   }
 
   const init3DViewer = async () => {
@@ -171,6 +211,7 @@ export function Docking() {
 
       const stage = new (window as any).NGL.Stage(container)
       stage.setParameters({ backgroundColor: '0x1a1a2e' })
+      nglStageRef.current = stage
 
       let loadedAny = false
 
@@ -258,35 +299,13 @@ END`
       setError('Please upload a ligand file or select from library')
       return
     }
-    
+
     setIsProcessing(true)
-    setProcessingStage('Preparing structures...')
-    setProcessingProgress(10)
+    setProcessingStage('Submitting job...')
+    setProcessingProgress(5)
     setError('')
-    
+
     try {
-      // Stage 1: Prepare structures
-      setProcessingStage('Preparing protein...')
-      setProcessingProgress(20)
-      
-      if (receptorContent) {
-        await fetch('/api/rdkit/prepare', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: receptorContent, type: 'protein' })
-        })
-      }
-      
-      setProcessingStage('Preparing ligand...')
-      setProcessingProgress(30)
-      
-      setProcessingStage('Generating grid box...')
-      setProcessingProgress(40)
-      
-      // Stage 2: Run docking
-      setProcessingStage('Running molecular docking...')
-      setProcessingProgress(50)
-      
       const response = await fetch('/api/docking/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,19 +326,37 @@ END`
           constraints: constraints.length > 0 ? constraints : undefined
         })
       })
-      
-      const data = await response.json()
-      
-      setProcessingProgress(80)
-      setProcessingStage('Analyzing results...')
-      
-      if (data.error) {
-        throw new Error(data.error)
+
+      const accepted = await response.json()
+      if (accepted.error) throw new Error(accepted.error)
+
+      const jobId = accepted.job_id
+      setProcessingStage('Docking in progress...')
+
+      // Poll /dock/{id}/status until done
+      let data: any = null
+      for (let attempt = 0; attempt < 300; attempt++) {
+        await new Promise(r => setTimeout(r, 2000))
+        const statusRes = await fetch(`/dock/${jobId}/status`)
+        const status = await statusRes.json()
+        const pct = Math.min(10 + Math.round((status.progress || 0) * 0.85), 90)
+        setProcessingProgress(pct)
+        setProcessingStage(status.message || 'Running...')
+
+        if (status.status === 'completed') {
+          const resultRes = await fetch(`/api/docking/result/${jobId}`)
+          data = await resultRes.json()
+          break
+        }
+        if (status.status === 'failed') {
+          throw new Error(status.message || 'Docking failed')
+        }
       }
-      
+
+      if (!data) throw new Error('Docking timed out')
+
       setProcessingProgress(100)
-      
-      // Create job entry
+
       const newJob: DockingJob = {
         job_id: data.job_id,
         job_name: `Docking_${Date.now()}`,
@@ -330,34 +367,70 @@ END`
         best_score: data.best_score,
         created_at: new Date().toISOString(),
         results: data.results,
-        download_urls: data.download_urls
+        download_urls: data.download_urls,
+        receptor_content: receptorContent || undefined,
+        ligand_pdb: data.files?.docking || undefined,
       }
-      
+
       setJobs(prev => [newJob, ...prev])
       setSelectedJob(newJob)
       setWorkflowStage('results')
-      
+
     } catch (e: any) {
       setError(e.message || 'Docking failed')
       setWorkflowStage('preview')
     }
-    
+
     setIsProcessing(false)
   }
 
   const selectJob = async (job: DockingJob) => {
     setSelectedJob(job)
-    
-    // Fetch results if not already loaded
-    if (!job.results) {
+    setAiJobId(job.job_id)
+    setAiAnswer('')
+
+    if (job.status === 'completed' && !job.results?.length) {
       try {
-        const res = await fetch(`/jobs/${job.job_id}/results`)
-        const data = await res.json()
-        setSelectedJob(prev => prev ? { ...prev, results: data.results } : null)
+        const res = await fetch(`/api/jobs/${job.job_id}/full`)
+        if (res.ok) {
+          const data = await res.json()
+          setSelectedJob({
+            job_id: data.job_id,
+            job_name: data.job_name || job.job_name,
+            receptor_name: data.receptor_name || job.receptor_name,
+            ligand_name: data.ligand_name || job.ligand_name,
+            status: 'completed',
+            engine: data.engine || job.engine,
+            best_score: data.best_score ?? job.best_score,
+            created_at: data.created_at || job.created_at,
+            completed_at: data.completed_at,
+            results: data.results,
+            download_urls: data.download_urls,
+            log_text: data.log_text,
+          })
+        }
       } catch (e) {
-        console.error('Failed to fetch results:', e)
+        console.error('Failed to restore job from history:', e)
       }
     }
+  }
+
+  const askAI = async () => {
+    if (!aiJobId || !aiQuestion.trim()) return
+    setAiLoading(true)
+    setAiAnswer('')
+    try {
+      const res = await fetch('/api/ai/job-explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: aiJobId, question: aiQuestion })
+      })
+      const data = await res.json()
+      setAiAnswer(data.answer || data.error || 'No response')
+    } catch (e: any) {
+      setAiAnswer('Error: ' + e.message)
+    }
+    setAiLoading(false)
   }
 
   const resetWorkflow = () => {
@@ -459,7 +532,27 @@ END`
         
         {/* Grid Configuration */}
         <div>
-          <h3 className="font-semibold mb-3">Grid Box Configuration</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Grid Box Configuration</h3>
+            {receptorContent && (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/docking/binding-site', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ receptor_content: receptorContent })
+                    })
+                    const d = await res.json()
+                    if (d.center_x != null) setGridConfig(d)
+                  } catch { /* no-op */ }
+                }}
+                className={`text-xs px-3 py-1 rounded ${isDark ? 'bg-cyan-900 hover:bg-cyan-800 text-cyan-300' : 'bg-cyan-50 hover:bg-cyan-100 text-cyan-700'} border border-cyan-500`}
+              >
+                ⚡ Auto-detect
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="text-xs text-gray-500">Center X</label>
@@ -921,9 +1014,16 @@ END`
         </div>
           </div>
           
+          {/* Simulated results banner (d10) */}
+          {selectedJob?.engine === 'simulated' && (
+            <div className="mb-4 px-3 py-2 rounded bg-yellow-900 border border-yellow-600 text-yellow-300 text-xs">
+              ⚠ Simulated results — Vina/GNINA unavailable. Scores are illustrative only.
+            </div>
+          )}
+
           {/* Scores Table */}
           <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
-            <h3 className="font-semibold mb-3">🏆 Docking Poses</h3>
+            <h3 className="font-semibold mb-3">🏆 Docking Poses <span className="text-xs font-normal text-gray-500">(click row to view pose)</span></h3>
             <table className="w-full text-sm">
               <thead>
                 <tr className={`text-left ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -942,7 +1042,24 @@ END`
               </thead>
               <tbody>
                 {selectedJob?.results?.map((r: DockingResult, i: number) => (
-                  <tr key={i} className={`border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
+                  <tr
+                    key={i}
+                    onClick={() => {
+                      setSelectedPoseIdx(i)
+                      if (nglStageRef.current) {
+                        nglStageRef.current.eachComponent((comp: any) => {
+                          if (comp.name === 'docking_result') {
+                            comp.setFrame(i)
+                          }
+                        })
+                      }
+                    }}
+                    className={`border-t cursor-pointer ${
+                      i === selectedPoseIdx
+                        ? isDark ? 'bg-cyan-900' : 'bg-cyan-50'
+                        : isDark ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-100 hover:bg-gray-50'
+                    }`}
+                  >
                     <td className="py-2">{r.mode}</td>
                     <td className="py-2 font-mono">{r.vina_score?.toFixed(2)}</td>
                     <td className="py-2 font-mono">{r.gnina_score?.toFixed(2) || '-'}</td>
@@ -973,6 +1090,70 @@ END`
               isDark={isDark}
             />
           )}
+
+          {/* Download Files */}
+          {selectedJob?.download_urls && Object.keys(selectedJob.download_urls).length > 0 && (
+            <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+              <h3 className="font-semibold mb-3">📥 Download Files</h3>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(selectedJob.download_urls).map(([key, url]: [string, any]) => (
+                  <a
+                    key={key}
+                    href={url}
+                    download
+                    className="px-3 py-1.5 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white font-mono"
+                  >
+                    ↓ {key}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Job Assistant */}
+          <div className={`rounded-lg border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+            <button
+              onClick={() => setShowAIPanel(v => !v)}
+              className="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold"
+            >
+              <span>🤖 Ask BioDockify AI about this job</span>
+              <span className="text-gray-400">{showAIPanel ? '▲' : '▼'}</span>
+            </button>
+            {showAIPanel && (
+              <div className="px-4 pb-4 space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={aiJobId}
+                    onChange={e => setAiJobId(e.target.value)}
+                    placeholder="Job ID"
+                    className={`w-40 px-2 py-1 text-xs rounded border font-mono ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-300'}`}
+                  />
+                  <span className="text-xs text-gray-500 self-center">(pre-filled)</span>
+                </div>
+                <textarea
+                  value={aiQuestion}
+                  onChange={e => setAiQuestion(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) askAI() }}
+                  placeholder="Ask anything: explain my binding scores, why did it fail, is -8.2 kcal/mol a good result, what does GNINA score mean…"
+                  rows={3}
+                  className={`w-full px-3 py-2 text-xs rounded border resize-none ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-300'}`}
+                />
+                <button
+                  onClick={askAI}
+                  disabled={aiLoading || !aiQuestion.trim()}
+                  className="px-4 py-1.5 text-xs rounded bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50"
+                >
+                  {aiLoading ? '⏳ Thinking…' : 'Ask AI (Ctrl+Enter)'}
+                </button>
+                {aiAnswer && (
+                  <div className={`p-3 rounded text-xs leading-relaxed whitespace-pre-wrap border ${isDark ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
+                    {aiAnswer}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Right - 3D Viewer */}
@@ -980,13 +1161,13 @@ END`
           <div className={`px-4 py-2 ${isDark ? 'bg-gray-800' : 'bg-gray-100'} flex items-center justify-between`}>
             <span className="text-sm font-medium">3D Viewer</span>
             <div className="flex gap-2">
-              <button onClick={() => setShowCartoon(!showCartoon)} className={`px-2 py-1 text-xs rounded ${showCartoon ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
+              <button onClick={() => setShowCartoon(v => !v)} className={`px-2 py-1 text-xs rounded ${showCartoon ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
                 Cartoon
               </button>
-              <button onClick={() => setShowSurface(!showSurface)} className={`px-2 py-1 text-xs rounded ${showSurface ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
+              <button onClick={() => setShowSurface(v => !v)} className={`px-2 py-1 text-xs rounded ${showSurface ? 'bg-cyan-600 text-white' : isDark ? 'bg-gray-700' : 'bg-white'}`}>
                 Surface
               </button>
-              <button onClick={init3DViewer} className={`px-2 py-1 text-xs rounded ${isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-200'}`}>
+              <button onClick={() => { nglStageRef.current = null; viewerLoaded.current = false; init3DViewer() }} className={`px-2 py-1 text-xs rounded ${isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-white hover:bg-gray-200'}`}>
                 Reset
               </button>
             </div>

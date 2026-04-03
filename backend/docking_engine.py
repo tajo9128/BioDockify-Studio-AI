@@ -237,7 +237,12 @@ def prepare_protein_from_content(
 
         num_residues = 0
         try:
-            num_residues = mol.GetNumResidues()
+            res_ids = set()
+            for line in pdb_content.split("\n"):
+                if line.startswith("ATOM") or line.startswith("HETATM"):
+                    res_id = line[17:27].strip()  # resname + chain + resseq
+                    res_ids.add(res_id)
+            num_residues = len(res_ids)
         except Exception:
             pass
 
@@ -255,6 +260,20 @@ def prepare_protein_from_content(
 def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
     """Convert RDKit mol to PDBQT format with proper column alignment."""
     from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    # Compute Gasteiger partial charges once for the whole molecule
+    try:
+        AllChem.ComputeGasteigerCharges(mol)
+    except Exception:
+        pass  # fall back to 0.0 per atom below
+
+    def _gasteiger(atom) -> float:
+        try:
+            q = atom.GetDoubleProp("_GasteigerCharge")
+            return q if q == q else 0.0  # guard against NaN
+        except Exception:
+            return 0.0
 
     pdbqt_lines = []
 
@@ -269,11 +288,12 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
             serial = (i + 1) % 99999
             name = atom.GetSymbol()
             atom_name = name.rjust(4)
+            charge = _gasteiger(atom)
 
             line = (
                 f"HETATM{serial:>5d} {atom_name} LIG A{(i // 9999) + 1:>4d}    "
                 f"{pos[0]:>8.3f}{pos[1]:>8.3f}{pos[2]:>8.3f}"
-                f"{1.00:>6.2f}{0.00:>6.2f}          {name:>2s}"
+                f"{1.00:>6.2f}{0.00:>6.2f}          {name:>2s}{charge:>+8.3f}"
             )
             pdbqt_lines.append(line)
 
@@ -304,11 +324,12 @@ def mol_to_pdbqt(mol, is_ligand: bool = True) -> str:
             atomic_num = atom.GetAtomicNum()
             ad_type = get_ad4_atom_type(atomic_num)
             atom_name = name.rjust(4)
+            charge = _gasteiger(atom)
 
             line = (
                 f"ATOM  {serial:>5d} {atom_name} PRO A{(i // 9999) + 1:>4d}    "
                 f"{pos[0]:>8.3f}{pos[1]:>8.3f}{pos[2]:>8.3f}"
-                f"{1.00:>6.2f}{0.00:>6.2f}          {ad_type:>2s}{0.000:>6.3f}"
+                f"{1.00:>6.2f}{0.00:>6.2f}          {ad_type:>2s}{charge:>+8.3f}"
             )
             pdbqt_lines.append(line)
 
@@ -863,16 +884,23 @@ def parse_vina_log(log_file: str, num_modes: int) -> List[Dict[str, Any]]:
             with open(log_file, "r") as f:
                 content = f.read()
 
-            lines = content.split("\n")
-            for line in lines:
-                if "|".join([" ", " ", " "]) in line and any(
-                    x in line for x in [" kcal/mol", "---"]
-                ):
-                    parts = line.split("|")
-                    if len(parts) >= 3:
+            # Vina table format: "   1         -7.2      0.000      0.000"
+            # Preceded by a header line containing "-----+"
+            in_table = False
+            for line in content.split("\n"):
+                if "-----+" in line or "mode |" in line.lower():
+                    in_table = True
+                    continue
+                if in_table:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    # Expect: mode  affinity  rmsd_lb  rmsd_ub
+                    if len(parts) >= 2:
                         try:
-                            mode = int(parts[0].strip())
-                            score = float(parts[1].strip())
+                            mode = int(parts[0])
+                            score = float(parts[1])
                             results.append(
                                 {
                                     "mode": mode,
@@ -1170,7 +1198,7 @@ def smart_dock(
             )
         return pipeline
 
-    logger.info("[SmartDock] STEP 3: Running initial Vina scan...")
+    logger.info("[SmartDock] STEP 3: Running Vina docking...")
 
     receptor_ensemble = [receptor_content] if receptor_content else [None]
 
@@ -1228,7 +1256,7 @@ def smart_dock(
             size_y,
             size_z,
             exhaustiveness,
-            min(num_modes, 5),
+            num_modes,
             output_dir,
         )
 
@@ -1259,61 +1287,14 @@ def smart_dock(
     pipeline["best_score"] = min([r["vina_score"] for r in pipeline["results"]])
     best_score = pipeline["best_score"]
 
-    if best_score <= ENERGY_THRESHOLD:
+    # Routing: escalate to GNINA when Vina finds a good binder (score <= threshold)
+    # i.e. use expensive CNN rescoring only where it matters
+    if best_score <= ENERGY_THRESHOLD and gnina_available:
         logger.info(
-            f"[SmartDock] Energy ({best_score:.2f}) <= {ENERGY_THRESHOLD} → Vina sufficient"
+            f"[SmartDock] Good binder ({best_score:.2f} <= {ENERGY_THRESHOLD}) → escalate to GNINA"
         )
         pipeline["routing_decision"] = (
-            f"VINA_ONLY (best: {best_score:.2f} <= {ENERGY_THRESHOLD})"
-        )
-        pipeline["engine_used"] = "vina"
-
-        full_vina_result = run_vina_docking(
-            receptor_pdbqt or ligand_pdbqt,
-            ligand_pdbqt,
-            center_x,
-            center_y,
-            center_z,
-            size_x,
-            size_y,
-            size_z,
-            exhaustiveness,
-            num_modes,
-            output_dir,
-        )
-
-        if full_vina_result["success"]:
-            pipeline["results"] = full_vina_result.get("results", pipeline["results"])
-            pipeline["files"].update(full_vina_result.get("files", {}))
-
-        pipeline["pipeline_stages"].append(
-            {
-                "stage": "docking",
-                "status": "completed",
-                "details": f"Vina complete - best: {best_score:.2f} kcal/mol",
-            }
-        )
-
-        pipeline["download_urls"] = {
-            "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-            "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-            "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
-        }
-        if receptor_pdbqt:
-            pipeline["download_urls"]["receptor_file"] = (
-                f"/download/{os.path.basename(receptor_pdbqt)}"
-            )
-        if ligand_pdbqt:
-            pipeline["download_urls"]["ligand_file"] = (
-                f"/download/{os.path.basename(ligand_pdbqt)}"
-            )
-
-    else:
-        logger.info(
-            f"[SmartDock] Energy ({best_score:.2f}) > {ENERGY_THRESHOLD} → GNINA + RF required"
-        )
-        pipeline["routing_decision"] = (
-            f"GNINA_RF (best: {best_score:.2f} > {ENERGY_THRESHOLD})"
+            f"GNINA_RF (best: {best_score:.2f} <= {ENERGY_THRESHOLD})"
         )
         pipeline["engine_used"] = "vina_then_gnina"
 
@@ -1356,6 +1337,38 @@ def smart_dock(
             "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
             "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
             "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+        }
+        if receptor_pdbqt:
+            pipeline["download_urls"]["receptor_file"] = (
+                f"/download/{os.path.basename(receptor_pdbqt)}"
+            )
+        if ligand_pdbqt:
+            pipeline["download_urls"]["ligand_file"] = (
+                f"/download/{os.path.basename(ligand_pdbqt)}"
+            )
+
+    else:
+        # Weak binder or GNINA unavailable — Vina results are sufficient
+        logger.info(
+            f"[SmartDock] Weak binder or GNINA unavailable ({best_score:.2f}) → Vina only"
+        )
+        pipeline["routing_decision"] = (
+            f"VINA_ONLY (best: {best_score:.2f} > {ENERGY_THRESHOLD})"
+        )
+        pipeline["engine_used"] = "vina"
+
+        pipeline["pipeline_stages"].append(
+            {
+                "stage": "docking",
+                "status": "completed",
+                "details": f"Vina complete - best: {best_score:.2f} kcal/mol",
+            }
+        )
+
+        pipeline["download_urls"] = {
+            "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+            "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+            "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
         }
         if receptor_pdbqt:
             pipeline["download_urls"]["receptor_file"] = (
@@ -1491,47 +1504,79 @@ def detect_binding_site(
     pdb_content: str, ligand_content: str = None
 ) -> Dict[str, float]:
     """
-    Detect binding site center from protein and optional ligand
+    Detect binding site center using a pocket-density heuristic.
+    Finds the Calpha with the most neighbors within 10 Å (buried pocket atoms),
+    then returns the centroid of that neighborhood as the grid center.
+    Falls back to protein centroid if heuristic fails.
     Returns: {center_x, center_y, center_z, size_x, size_y, size_z}
     """
     try:
-        from rdkit import Chem
-        from rdkit.Geometry import Point3D
+        import numpy as np
 
-        protein = Chem.MolFromPDBBlock(pdb_content, flavor=4)
+        # Parse Calpha (or all heavy backbone) coordinates from PDB lines
+        ca_coords = []
+        for line in pdb_content.split("\n"):
+            if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                continue
+            atom_name = line[12:16].strip()
+            resname = line[17:20].strip()
+            # Skip water and common ions
+            if resname in ("HOH", "WAT", "H2O", "NA", "CL", "MG", "ZN", "CA"):
+                continue
+            # Prefer Cα for proteins; for ligands take all heavy atoms
+            if line.startswith("ATOM") and atom_name != "CA":
+                continue
+            try:
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+                ca_coords.append([x, y, z])
+            except (ValueError, IndexError):
+                continue
 
-        if protein is None:
-            return {
-                "center_x": 0,
-                "center_y": 0,
-                "center_z": 0,
-                "size_x": 20,
-                "size_y": 20,
-                "size_z": 20,
-            }
+        if not ca_coords:
+            return {"center_x": 0, "center_y": 0, "center_z": 0,
+                    "size_x": 20, "size_y": 20, "size_z": 20}
 
-        conf = protein.GetConformer()
-        coords = [conf.GetPositions()]
+        coords = np.array(ca_coords)
 
-        center_x = sum(c[0] for c in coords[0]) / len(coords[0])
-        center_y = sum(c[1] for c in coords[0]) / len(coords[0])
-        center_z = sum(c[2] for c in coords[0]) / len(coords[0])
+        # Find the Cα with maximum neighbor count within 10 Å — this is the
+        # most buried / pocket-like region
+        POCKET_RADIUS = 10.0
+        best_idx = 0
+        best_count = 0
+        for i, c in enumerate(coords):
+            dists = np.linalg.norm(coords - c, axis=1)
+            count = int(np.sum(dists < POCKET_RADIUS)) - 1  # exclude self
+            if count > best_count:
+                best_count = count
+                best_idx = i
 
-        max_dist = max(
-            ((c[0] - center_x) ** 2 + (c[1] - center_y) ** 2 + (c[2] - center_z) ** 2)
-            ** 0.5
-            for c in coords[0]
-        )
+        # Centroid of the neighborhood around the densest point
+        center_atom = coords[best_idx]
+        dists = np.linalg.norm(coords - center_atom, axis=1)
+        neighborhood = coords[dists < POCKET_RADIUS]
+        cx = float(np.mean(neighborhood[:, 0]))
+        cy = float(np.mean(neighborhood[:, 1]))
+        cz = float(np.mean(neighborhood[:, 2]))
 
-        size = min(max(max_dist * 2, 15), 40)
+        # Box size: span of neighborhood + 6 Å padding, clamped 20–30 Å
+        if len(neighborhood) > 1:
+            span_x = float(np.ptp(neighborhood[:, 0])) + 6.0
+            span_y = float(np.ptp(neighborhood[:, 1])) + 6.0
+            span_z = float(np.ptp(neighborhood[:, 2])) + 6.0
+        else:
+            span_x = span_y = span_z = 20.0
+
+        box = lambda s: round(min(max(s, 20.0), 30.0), 2)
 
         return {
-            "center_x": round(center_x, 2),
-            "center_y": round(center_y, 2),
-            "center_z": round(center_z, 2),
-            "size_x": round(size, 2),
-            "size_y": round(size, 2),
-            "size_z": round(size, 2),
+            "center_x": round(cx, 2),
+            "center_y": round(cy, 2),
+            "center_z": round(cz, 2),
+            "size_x": box(span_x),
+            "size_y": box(span_y),
+            "size_z": box(span_z),
         }
     except Exception as e:
         logger.warning(f"Binding site detection failed: {e}")

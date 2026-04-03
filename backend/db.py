@@ -27,9 +27,25 @@ def init_db():
             completed_at DATETIME,
             binding_energy REAL,
             confidence_score REAL,
-            engine TEXT
+            engine TEXT,
+            files_json TEXT,
+            log_text TEXT,
+            receptor_name TEXT,
+            ligand_name TEXT
         )
     """)
+
+    # Migrate existing DBs: add new columns if missing
+    for col_def in [
+        ("files_json", "TEXT"),
+        ("log_text", "TEXT"),
+        ("receptor_name", "TEXT"),
+        ("ligand_name", "TEXT"),
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE jobs ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass  # column already exists
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS docking_results (
@@ -186,6 +202,49 @@ def add_interaction(job_uuid: str, pose_id: int, interaction_type: str, atom_a: 
         return False
 
 
+_JOB_COLUMNS = [
+    'id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status',
+    'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine',
+    'files_json', 'log_text', 'receptor_name', 'ligand_name',
+]
+
+
+def update_job_files(
+    job_uuid: str,
+    files_json: Optional[str] = None,
+    log_text: Optional[str] = None,
+    receptor_name: Optional[str] = None,
+    ligand_name: Optional[str] = None,
+) -> bool:
+    """Persist file paths, log, and name metadata for a completed job."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        parts, params = [], []
+        if files_json is not None:
+            parts.append("files_json = ?")
+            params.append(files_json)
+        if log_text is not None:
+            parts.append("log_text = ?")
+            params.append(log_text[:65536])  # cap at 64 KB
+        if receptor_name is not None:
+            parts.append("receptor_name = ?")
+            params.append(receptor_name)
+        if ligand_name is not None:
+            parts.append("ligand_name = ?")
+            params.append(ligand_name)
+        if not parts:
+            return True
+        params.append(job_uuid)
+        cur.execute(f"UPDATE jobs SET {', '.join(parts)} WHERE job_uuid = ?", params)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating job files: {e}")
+        return False
+
+
 def get_job(job_uuid: str) -> Optional[Dict[str, Any]]:
     """Get job by UUID"""
     try:
@@ -194,11 +253,8 @@ def get_job(job_uuid: str) -> Optional[Dict[str, Any]]:
         cur.execute("SELECT * FROM jobs WHERE job_uuid = ?", (job_uuid,))
         row = cur.fetchone()
         conn.close()
-        
         if row:
-            columns = ['id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status', 
-                      'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine']
-            return dict(zip(columns, row))
+            return dict(zip(_JOB_COLUMNS, row))
         return None
     except Exception as e:
         print(f"Error getting job: {e}")
@@ -213,13 +269,20 @@ def get_all_jobs(limit: int = 50) -> List[Dict[str, Any]]:
         cur.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,))
         rows = cur.fetchall()
         conn.close()
-        
-        columns = ['id', 'job_uuid', 'job_name', 'receptor_file', 'ligand_file', 'status',
-                  'created_at', 'completed_at', 'binding_energy', 'confidence_score', 'engine']
-        return [dict(zip(columns, row)) for row in rows]
+        return [dict(zip(_JOB_COLUMNS, row)) for row in rows]
     except Exception as e:
         print(f"Error getting jobs: {e}")
         return []
+
+
+def get_job_full(job_uuid: str) -> Optional[Dict[str, Any]]:
+    """Get job + all docking results from DB (for history restore)."""
+    job = get_job(job_uuid)
+    if not job:
+        return None
+    results = get_docking_results(job_uuid)
+    job["results"] = results
+    return job
 
 
 def get_docking_results(job_uuid: str) -> List[Dict[str, Any]]:
