@@ -1063,6 +1063,15 @@ def api_docking_run(req: DockingRunRequest):
 
         logger.info(f"[Docking] Saving {len(results)} results for job {job_id}")
         saved_count = 0
+        docking_file = docking_result.get("files", {}).get("docking", "")
+        pdb_data = ""
+        if docking_file and os.path.exists(docking_file):
+            with open(docking_file, "r") as f:
+                pdb_data = f.read()
+            logger.info(
+                f"[Docking] Loaded PDB data: {len(pdb_data)} chars from {docking_file}"
+            )
+
         for r in results:
             try:
                 success = add_docking_result(
@@ -1072,6 +1081,7 @@ def api_docking_run(req: DockingRunRequest):
                     vina_score=r.get("vina_score"),
                     gnina_score=r.get("gnina_score"),
                     rf_score=r.get("rf_score"),
+                    pdb_data=pdb_data if pdb_data else None,
                 )
                 if success:
                     saved_count += 1
