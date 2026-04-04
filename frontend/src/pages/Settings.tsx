@@ -109,6 +109,7 @@ export function Settings() {
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [autoDetecting, setAutoDetecting] = useState(false)
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testResult, setTestResult] = useState<{ status: string; response?: string; error?: string } | null>(null)
   const [message, setMessage] = useState('')
@@ -252,6 +253,35 @@ export function Settings() {
       setMessage('Connection failed')
     } finally {
       setTesting(false)
+    }
+  }
+
+  const handleAutoDetect = async () => {
+    setAutoDetecting(true)
+    setMessage('')
+    try {
+      const res = await fetch('/llm/auto-detect')
+      const data = await res.json()
+      if (data.provider) {
+        setLlmConfig({
+          provider: data.provider,
+          model: data.model,
+          apiKey: '',
+          baseUrl: data.base_url || '',
+          temperature: '0.7',
+          maxTokens: '4096',
+        })
+        setMessage(`Auto-detected: ${data.provider} (${data.model})`)
+        if (data.provider === 'ollama') {
+          fetchOllamaModels()
+        }
+      } else {
+        setMessage('No LLM provider detected. Install Ollama or add an API key.')
+      }
+    } catch (e: any) {
+      setMessage('Auto-detect failed: ' + e.message)
+    } finally {
+      setAutoDetecting(false)
     }
   }
 
@@ -487,6 +517,17 @@ export function Settings() {
                 </div>
 
                 <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleAutoDetect}
+                    disabled={autoDetecting}
+                    className={`px-5 py-2.5 font-medium rounded-lg transition-colors ${
+                      isDark 
+                        ? 'bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white' 
+                        : 'bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white'
+                    }`}
+                  >
+                    {autoDetecting ? '⏳ Detecting...' : '🔍 Auto-Detect'}
+                  </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}

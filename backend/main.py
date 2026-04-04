@@ -2332,7 +2332,28 @@ def get_ollama_models():
 
 @app.put("/llm/settings")
 def update_llm_settings(settings: Dict[str, Any]):
+    """Save LLM settings to both in-memory config AND llm_config.json for LLMRouter."""
     LLM_SETTINGS.update(settings)
+    
+    # Also save to llm_config.json so LLMRouter picks it up
+    try:
+        from ai.llm_router import save_config
+        save_config({
+            "provider": settings.get("provider", "ollama"),
+            "model": settings.get("model", ""),
+            "api_key": settings.get("api_key", ""),
+            "base_url": settings.get("base_url", ""),
+            "temperature": settings.get("temperature", 0.7),
+            "max_tokens": settings.get("max_tokens", 4096),
+        })
+        # Reset router singleton to pick up new config
+        from ai.llm_router import get_router
+        router = get_router()
+        router.reset()
+        logger.info(f"LLM settings saved and router reset: provider={settings.get('provider')}")
+    except Exception as e:
+        logger.error(f"Failed to save LLM config to file: {e}")
+    
     return {"status": "updated"}
 
 
@@ -2345,66 +2366,136 @@ class LLMTestRequest(BaseModel):
 
 @app.post("/llm/test")
 def llm_test(req: LLMTestRequest):
-    """Test LLM connection with actual API call"""
-    test_url = req.base_url or f"http://{OLLAMA_HOST}/v1"
+    """Test LLM connection with actual API call. Handles Ollama natively and all OpenAI-compatible APIs."""
+    # Normalize localhost → host.docker.internal for Docker
+    test_url = req.base_url or ""
+    if "localhost" in test_url:
+        test_url = test_url.replace("localhost", "host.docker.internal")
+    
+    if req.provider == "ollama" and not test_url:
+        test_url = f"http://{OLLAMA_HOST}"
+    elif not test_url:
+        from ai.llm_router import PROVIDER_URLS
+        test_url = PROVIDER_URLS.get(req.provider, "https://api.openai.com/v1")
+    
+    # Normalize: strip /v1 for Ollama (uses native API), keep for others
+    if req.provider == "ollama":
+        test_url = test_url.rstrip("/").removesuffix("/v1")
+    
     logger.info(
         f"Testing LLM connection: provider={req.provider}, model={req.model}, base_url={test_url}"
     )
 
-    headers = {"Content-Type": "application/json"}
-    if req.api_key:
-        if req.provider == "anthropic":
-            headers["x-api-key"] = req.api_key
-            headers["anthropic-version"] = "2023-06-01"
-        else:
-            headers["Authorization"] = f"Bearer {req.api_key}"
-
-    payload = {
-        "model": req.model,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Say 'Connection successful' in exactly those words.",
-            }
-        ],
-        "max_tokens": 50,
-        "temperature": 0.1,
-    }
-
     try:
         import requests as req_lib
 
-        response = req_lib.post(
-            f"{test_url}/chat/completions", json=payload, headers=headers, timeout=30
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            logger.info(f"LLM test successful: {content[:50]}")
-            return {"status": "ok", "response": content[:100], "error": None}
+        if req.provider == "ollama":
+            # Use Ollama native API
+            response = req_lib.post(
+                f"{test_url}/api/chat",
+                json={
+                    "model": req.model,
+                    "messages": [{"role": "user", "content": "Say 'Connection successful' in exactly those words."}],
+                    "stream": False,
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("message", {}).get("content", "")
+                logger.info(f"LLM test successful (Ollama): {content[:50]}")
+                return {"status": "ok", "response": content[:100], "error": None}
+            else:
+                return {
+                    "status": "error",
+                    "response": None,
+                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                }
         else:
-            error_msg = response.text[:200]
-            logger.warning(f"LLM test failed: {response.status_code} - {error_msg}")
-            return {
-                "status": "error",
-                "response": None,
-                "error": f"HTTP {response.status_code}: {error_msg}",
-            }
+            # OpenAI-compatible API
+            headers = {"Content-Type": "application/json"}
+            if req.api_key:
+                if req.provider == "anthropic":
+                    headers["x-api-key"] = req.api_key
+                    headers["anthropic-version"] = "2023-06-01"
+                else:
+                    headers["Authorization"] = f"Bearer {req.api_key}"
+
+            response = req_lib.post(
+                f"{test_url}/chat/completions",
+                json={
+                    "model": req.model,
+                    "messages": [{"role": "user", "content": "Say 'Connection successful' in exactly those words."}],
+                    "max_tokens": 50,
+                    "temperature": 0.1,
+                },
+                headers=headers,
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                logger.info(f"LLM test successful: {content[:50]}")
+                return {"status": "ok", "response": content[:100], "error": None}
+            else:
+                return {
+                    "status": "error",
+                    "response": None,
+                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                }
 
     except req_lib.exceptions.ConnectionError:
-        logger.warning(f"LLM test failed: Connection refused - is the server running?")
-        return {
-            "status": "error",
-            "response": None,
-            "error": "Connection refused. Is the server running?",
-        }
+        return {"status": "error", "response": None, "error": "Connection refused. Is the server running?"}
     except req_lib.exceptions.Timeout:
-        logger.warning(f"LLM test failed: Request timeout")
         return {"status": "error", "response": None, "error": "Request timeout"}
     except Exception as e:
-        logger.warning(f"LLM test failed: {str(e)}")
         return {"status": "error", "response": None, "error": str(e)}
+
+
+@app.get("/llm/auto-detect")
+def auto_detect_llm():
+    """Auto-detect available LLM providers.
+    Checks: 1) Ollama with installed models, 2) Saved config, 3) Common APIs.
+    Returns the first working provider.
+    """
+    from ai.llm_router import PROVIDER_URLS, PROVIDER_MODELS, _load_config
+    import requests as req_lib
+
+    # 1. Check saved config first
+    saved = _load_config()
+    if saved.get("provider") and saved.get("api_key"):
+        provider = saved["provider"]
+        api_key = saved["api_key"]
+        base_url = saved.get("base_url", "") or PROVIDER_URLS.get(provider, "")
+        model = saved.get("model", "") or PROVIDER_MODELS.get(provider, "")
+        try:
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            resp = req_lib.post(
+                f"{base_url}/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5},
+                headers=headers, timeout=10
+            )
+            if resp.status_code in (200, 400, 401, 403, 429):
+                return {"provider": provider, "model": model, "base_url": base_url, "has_api_key": True}
+        except Exception:
+            pass
+
+    # 2. Check Ollama
+    for url in ["http://host.docker.internal:11434", "http://localhost:11434", "http://ollama:11434"]:
+        try:
+            resp = req_lib.get(f"{url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                models = resp.json().get("models", [])
+                if models:
+                    model_name = models[0].get("name", "llama3.2")
+                    return {"provider": "ollama", "model": model_name, "base_url": f"{url}/v1", "has_api_key": False}
+        except Exception:
+            continue
+
+    # 3. Nothing found
+    return {"provider": None, "model": None, "base_url": None, "has_api_key": False}
 
 
 @app.post("/api/rdkit/prepare")

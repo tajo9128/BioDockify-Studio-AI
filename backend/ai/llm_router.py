@@ -293,10 +293,11 @@ class LLMRouter:
         Send a chat message.
         Returns dict with: response, provider, available
         """
-        config_provider = self._get_config_provider()
+        # Force provider detection to initialize _api_provider
+        detected = self.provider
 
         # Ollama
-        if config_provider == "ollama" and self.ollama.is_available():
+        if detected == "ollama":
             try:
                 response_text = self.ollama.chat(message)
                 return {
@@ -314,17 +315,17 @@ class LLMRouter:
                     "error": str(e)
                 }
 
-        # API providers
-        if self._api_provider and self.provider != "offline":
+        # API providers (OpenAI, DeepSeek, Groq, custom, etc.)
+        if detected != "offline" and self._api_provider:
             try:
                 response_text = self._api_provider.chat(message)
                 return {
                     "response": response_text,
-                    "provider": self.provider,
+                    "provider": detected,
                     "available": True
                 }
             except Exception as e:
-                logger.warning(f"{self.provider} failed: {e}")
+                logger.warning(f"{detected} failed: {e}")
                 response_text = self.offline.respond(message)
                 return {
                     "response": response_text,
@@ -338,7 +339,7 @@ class LLMRouter:
         return {
             "response": response_text,
             "provider": "offline",
-            "available": self.detect_provider()
+            "available": False
         }
 
     def reset(self):
