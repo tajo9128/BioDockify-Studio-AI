@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { Card, Button, Tabs, TabPanel } from '@/components/ui'
-import { MoleculeDrawer } from '@/components/MoleculeDrawer'
+const MoleculeDrawer = lazy(() => import('@/components/MoleculeDrawer').then(m => ({ default: m.MoleculeDrawer })))
 import Plot from 'react-plotly.js'
 import {
   getDescriptorGroups,
@@ -680,12 +680,14 @@ export function QSARModeling() {
         )}
       </TabPanel>
 
-      <MoleculeDrawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onSave={handleMoleculeSave}
-        initialSmiles={predictSmiles}
-      />
+      <Suspense fallback={null}>
+        <MoleculeDrawer
+          isOpen={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onSave={handleMoleculeSave}
+          initialSmiles={predictSmiles}
+        />
+      </Suspense>
     </div>
   )
 }
