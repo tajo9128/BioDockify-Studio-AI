@@ -1368,48 +1368,12 @@ def smart_dock(
     pipeline["best_score"] = min([r["vina_score"] for r in pipeline["results"]])
     best_score = pipeline["best_score"]
 
-    # Routing logic:
-    # best_score < -5.0 (strong binder) → exit at Vina, results are sufficient
-    # best_score >= -5.0 (weak/ambiguous) → full pipeline: Vina → GNINA → RF
-    if best_score <= ENERGY_THRESHOLD:
-        # Strong binder — Vina score is decisive, no need for expensive rescoring
-        logger.info(
-            f"[SmartDock] Strong binder ({best_score:.2f} <= {ENERGY_THRESHOLD}) → Vina sufficient, exiting"
-        )
-        pipeline["routing_decision"] = (
-            f"VINA_ONLY (strong binder: {best_score:.2f} <= {ENERGY_THRESHOLD})"
-        )
-        pipeline["engine_used"] = "vina"
-
-        pipeline["pipeline_stages"].append(
-            {
-                "stage": "docking",
-                "status": "completed",
-                "details": f"Vina complete - strong binder: {best_score:.2f} kcal/mol",
-            }
-        )
-
-        pipeline["download_urls"] = {
-            "log_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('log', ''))}",
-            "docking_file": f"/download/{os.path.basename(vina_result.get('files', {}).get('docking', ''))}",
-            "vina_log": f"/download/{os.path.basename(vina_result.get('files', {}).get('log', ''))}",
-            "vina_docking": f"/download/{os.path.basename(vina_result.get('files', {}).get('docking', ''))}",
-        }
-        if receptor_pdbqt:
-            pipeline["download_urls"]["receptor_file"] = (
-                f"/download/{os.path.basename(receptor_pdbqt)}"
-            )
-        if ligand_pdbqt:
-            pipeline["download_urls"]["ligand_file"] = (
-                f"/download/{os.path.basename(ligand_pdbqt)}"
-            )
-
-    elif gnina_available:
-        # Weak/ambiguous binder — escalate to full pipeline: Vina → GNINA → RF
+    # Always run full pipeline: Vina → GNINA → RF
+    if gnina_available:
         gpu_info = check_gpu_cuda()
         mode = "GPU" if gpu_info["available"] else "CPU"
         logger.info(
-            f"[SmartDock] Weak binder ({best_score:.2f} > {ENERGY_THRESHOLD}) → full pipeline: Vina → GNINA+RF ({mode})"
+            f"[SmartDock] Vina complete (best: {best_score:.2f}) → full pipeline: Vina → GNINA+RF ({mode})"
         )
         pipeline["routing_decision"] = (
             f"VINA → GNINA+RF ({mode}, Vina best: {best_score:.2f})"
