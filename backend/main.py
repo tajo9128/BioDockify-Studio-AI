@@ -189,7 +189,7 @@ def health():
         try:
             import requests
 
-            ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+            ollama_url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
             response = requests.get(f"{ollama_url}/api/tags", timeout=3)
             if response.status_code == 200:
                 data = response.json()
@@ -209,7 +209,7 @@ def health():
 @app.get("/ollama/status")
 def ollama_status():
     """Get detailed Ollama status with retry"""
-    ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    ollama_url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 
     result = {"url": ollama_url, "available": False, "models": [], "error": None}
 
@@ -311,7 +311,7 @@ def system_status():
         # Check Ollama
         ollama_available = False
         try:
-            ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+            ollama_url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
             response = requests.get(f"{ollama_url}/api/tags", timeout=3)
             ollama_available = response.status_code == 200
         except:
@@ -533,7 +533,7 @@ def system_diagnostics():
     try:
         import requests
 
-        ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        ollama_url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
         response = requests.get(f"{ollama_url}/api/tags", timeout=5)
         if response.status_code == 200:
             models = response.json().get("models", [])
