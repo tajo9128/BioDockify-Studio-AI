@@ -571,6 +571,104 @@ async def clear_memory(conversation_id: str):
     return {"status": "cleared"}
 
 
+@app.get("/ai/context")
+async def ai_context():
+    """Aggregate live platform context for Commander Brain UI — polls api-backend for jobs + service health."""
+    context: Dict[str, Any] = {
+        "stats": {},
+        "recent_jobs": [],
+        "services": {},
+        "tools_count": len(registry.list_tools()),
+        "tools": [t["name"] for t in registry.list_tools()],
+        "provider": "unknown",
+        "model": "unknown",
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/stats")
+            if r.status_code == 200:
+                data = r.json()
+                context["stats"] = data
+                context["services"] = data.get("services", {})
+        except Exception:
+            pass
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/jobs?limit=15")
+            if r.status_code == 200:
+                context["recent_jobs"] = r.json().get("jobs", [])[:15]
+        except Exception:
+            pass
+        try:
+            r = await client.get(f"{API_BACKEND_URL}/llm/settings")
+            if r.status_code == 200:
+                s = r.json()
+                context["provider"] = s.get("provider", "unknown")
+                context["model"] = s.get("model", "unknown")
+        except Exception:
+            pass
+    return context
+
+
+class ExecuteRequest(BaseModel):
+    action: str
+    params: Dict[str, Any] = {}
+
+
+@app.post("/ai/execute")
+async def ai_execute(req: ExecuteRequest):
+    """Commander AI executor — lets the UI trigger platform actions directly via the brain service."""
+    action = req.action.lower().strip()
+    params = req.params or {}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            if action == "list_jobs":
+                limit = params.get("limit", 20)
+                r = await client.get(f"{API_BACKEND_URL}/jobs?limit={limit}")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "get_job":
+                job_id = params.get("job_id")
+                if not job_id:
+                    raise HTTPException(status_code=400, detail="job_id required")
+                r = await client.get(f"{API_BACKEND_URL}/jobs/{job_id}")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "get_stats":
+                r = await client.get(f"{API_BACKEND_URL}/stats")
+                r.raise_for_status()
+                return {"action": action, "result": r.json()}
+
+            elif action == "list_tools":
+                tools = registry.list_tools()
+                return {"action": action, "result": {"tools": tools, "count": len(tools)}}
+
+            elif action == "get_memory":
+                conv_id = params.get("conversation_id")
+                if not conv_id:
+                    raise HTTPException(status_code=400, detail="conversation_id required")
+                return {"action": action, "result": memory.get_history(conv_id)}
+
+            elif action == "clear_memory":
+                conv_id = params.get("conversation_id")
+                if conv_id:
+                    memory.clear(conv_id)
+                return {"action": action, "result": "cleared"}
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown action: {action}. Supported: list_jobs, get_job, get_stats, list_tools, get_memory, clear_memory",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"ai_execute error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/pipeline")
 async def run_pipeline(task: str, target: str = None, library: str = None):
     """Run a predefined pipeline"""

@@ -1,434 +1,401 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Card, Button, Badge } from '@/components/ui'
-import { sendChat, getChatStatus } from '@/api/chat'
+import { sendChat, getChatStatus, getPlatformContext } from '@/api/chat'
+import type { PlatformContext } from '@/lib/types'
 
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
-  isStreaming?: boolean
   toolsUsed?: string[]
 }
 
-interface SystemStatus {
-  status: string
-  system?: { cpu_percent: number; memory_percent: number; memory_total_gb: number }
-  gpu?: { available: boolean; info: any }
-  services?: { rdkit: any; vina: any; gnina: any; ollama: any }
-  jobs?: { total: number; completed: number; failed: number; running: number }
+const SERVICE_CONFIG: Record<string, { label: string; icon: string }> = {
+  brain_service:         { label: 'NanoBOT Brain',       icon: '🧠' },
+  docking_service:       { label: 'Docking (Vina+GNINA)', icon: '🔬' },
+  rdkit_service:         { label: 'RDKit Chemistry',      icon: '⚗️' },
+  pharmacophore_service: { label: 'Pharmacophore',        icon: '🧲' },
+  qsar_service:          { label: 'QSAR ML',              icon: '📈' },
+  md_service:            { label: 'Molecular Dynamics',   icon: '💫' },
+  sentinel_service:      { label: 'Sentinel (Watchdog)',  icon: '🛡️' },
+  analysis_service:      { label: 'Analysis Engine',      icon: '📊' },
+  api_backend:           { label: 'API Gateway',          icon: '⚡' },
 }
+
+const QUICK_CMDS = [
+  { label: '⚡ Active Jobs',      text: 'Show me all active and recent jobs with their current status and binding energies' },
+  { label: '🏆 Top Hits',         text: 'What are the best docking results so far? Rank by binding energy and explain the top hits' },
+  { label: '🔬 Virtual Screen',   text: 'Walk me through running a complete virtual screening pipeline — pharmacophore, docking, and ranking' },
+  { label: '💊 Lead Optimize',    text: 'How do I run a lead optimization workflow on my best docking hit using the analysis and QSAR services?' },
+  { label: '📈 QSAR Modeling',    text: 'Explain how to train a QSAR model and predict activity for a new set of compounds' },
+  { label: '💫 MD Validation',    text: 'How do I validate my top docking pose with molecular dynamics? What RMSD thresholds should I use?' },
+  { label: '🧲 Pharmacophore',    text: 'Generate a pharmacophore model from my receptor-ligand complex and screen a compound library' },
+  { label: '🛡️ Platform Health',  text: 'Check the health of all 9 platform services and tell me if anything needs attention' },
+]
 
 export function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<{ provider: string; available: boolean } | null>(null)
-  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null)
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
-  const [diagnostics, setDiagnostics] = useState<any>(null)
-  const [llmSettings, setLlmSettings] = useState<any>(null)
-  const [ollamaModels, setOllamaModels] = useState<string[]>([])
-  const [showModelPicker, setShowModelPicker] = useState(false)
+  const [providerStatus, setProviderStatus] = useState<{ provider: string; available: boolean } | null>(null)
+  const [ctx, setCtx] = useState<PlatformContext | null>(null)
+  const [convId, setConvId] = useState<string>(() => crypto.randomUUID())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-    fetchSystemStatus()
-  }, [messages])
-
-  useEffect(() => {
-    fetchSystemStatus()
-    fetchLLMSettings()
-    const interval = setInterval(fetchSystemStatus, 30000)
-    return () => clearInterval(interval)
+  const fetchCtx = useCallback(async () => {
+    try { setCtx(await getPlatformContext()) } catch { /* silent */ }
   }, [])
 
-  const fetchSystemStatus = async () => {
-    try {
-      const res = await fetch('/system/status')
-      if (res.ok) {
-        const data = await res.json()
-        setSystemStatus(data)
-      }
-    } catch (e) {
-      console.error('Failed to fetch system status:', e)
-    }
-  }
+  useEffect(() => {
+    fetchCtx()
+    getChatStatus()
+      .then(s => setProviderStatus({ provider: s.provider, available: s.ollama_available }))
+      .catch(() => {})
+    const t = setInterval(fetchCtx, 8000)
+    return () => clearInterval(t)
+  }, [fetchCtx])
 
-  const fetchLLMSettings = async () => {
-    try {
-      const res = await fetch('/llm/settings')
-      if (res.ok) {
-        const data = await res.json()
-        setLlmSettings(data)
-      }
-    } catch (e) {
-      console.error('Failed to fetch LLM settings:', e)
-    }
-    try {
-      const res = await fetch('/llm/ollama/models')
-      if (res.ok) {
-        const data = await res.json()
-        setOllamaModels(data.models || [])
-      }
-    } catch (e) {
-      console.error('Failed to fetch Ollama models:', e)
-    }
-  }
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-  const runDiagnostics = async () => {
-    setShowDiagnostics(true)
-    try {
-      const res = await fetch('/system/diagnostics')
-      if (res.ok) {
-        const data = await res.json()
-        setDiagnostics(data)
-      }
-    } catch (e) {
-      console.error('Failed to run diagnostics:', e)
-    }
-  }
-
-  const handleSend = async () => {
-    if (!input.trim() || loading) return
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input.trim(),
-      timestamp: new Date(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
+  const send = async (override?: string) => {
+    const txt = (override !== undefined ? override : input).trim()
+    if (!txt || loading) return
+    setMessages(p => [...p, { id: Date.now().toString(), role: 'user', content: txt, timestamp: new Date() }])
     setInput('')
     setLoading(true)
     setError(null)
-
     try {
-      const response = await sendChat(userMessage.content)
-      const assistantMessage: Message = {
+      const res = await sendChat(txt, convId)
+      if (res.conversation_id) setConvId(res.conversation_id)
+      setMessages(p => [...p, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.response || 'AI returned no response. Check your LLM settings.',
+        content: res.response || 'No response.',
         timestamp: new Date(),
-        toolsUsed: response.tools_used,
-      }
-      setMessages((prev) => [...prev, assistantMessage])
-      setStatus({ provider: response.provider || 'unknown', available: response.available !== false })
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || 'Failed to connect to AI assistant. Check Settings.'
-      setError(msg)
-      setMessages((prev) => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Error: ${msg}\n\nPlease check:\n1. Is the LLM service running in Settings?\n2. Is your API key valid?\n3. Is Ollama running locally?`,
-        timestamp: new Date(),
+        toolsUsed: res.tools_used,
       }])
+      setProviderStatus({ provider: res.provider || 'unknown', available: res.available !== false })
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Connection failed. Check LLM settings.'
+      setError(msg)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleStatus = async () => {
-    try {
-      const s = await getChatStatus()
-      setStatus({ provider: s.provider, available: s.ollama_available })
-    } catch (err) {
-      console.error('Status check failed:', err)
-      setStatus({ provider: 'unknown', available: false })
-    }
-  }
+  const newSession = () => { setMessages([]); setConvId(crypto.randomUUID()) }
 
-  const clearMessages = () => setMessages([])
+  const fmt = (content: string) => content
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px;font-size:.85em;font-family:monospace">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/^### (.+)$/gm, '<div style="font-weight:700;margin-top:8px">$1</div>')
+    .replace(/^## (.+)$/gm, '<div style="font-weight:700;font-size:1.05em;margin-top:10px">$1</div>')
+    .replace(/^- (.+)$/gm, '<div style="margin-left:12px">• $1</div>')
 
-  const formatContent = (content: string): string => {
-    let formatted = content
-    formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs font-mono">$1</code>')
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>')
-    formatted = formatted.replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-3 mb-1">$1</h3>')
-    formatted = formatted.replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-4 mb-2">$1</h2>')
-    formatted = formatted.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>')
-    formatted = formatted.replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
-    formatted = formatted.replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-    return formatted
-  }
-
-  const currentModelLabel = llmSettings
-    ? `${llmSettings.model || 'unknown'} (${llmSettings.provider || 'unknown'})`
-    : 'Loading...'
+  const activeJobs = ctx?.recent_jobs?.filter(j => ['running','queued','pending'].includes(j.status?.toLowerCase())) ?? []
+  const completedJobs = ctx?.recent_jobs?.filter(j => j.status?.toLowerCase() === 'completed') ?? []
+  const failedJobs = ctx?.recent_jobs?.filter(j => j.status?.toLowerCase() === 'failed') ?? []
+  const healthyCount = Object.values(ctx?.services ?? {}).filter(v => v === 'healthy').length
+  const totalSvc = Object.keys(SERVICE_CONFIG).length
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+    <div className="h-full flex flex-col p-4 gap-3 min-h-0">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white text-xl">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center text-white font-bold shadow-md text-lg">
             🧬
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">BioDockify AI</h1>
+            <h1 className="text-lg font-bold text-text-primary flex items-center gap-2">
+              BioDockify AI Commander
+              {activeJobs.length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Jobs running" />
+              )}
+            </h1>
             <p className="text-xs text-text-secondary">
-              AI Drug Discovery assistant {status?.provider ? `• ${status.provider}` : ''}
+              v4.3.7 · {totalSvc} services · {ctx?.tools_count ?? 0} AI tools
+              {ctx?.provider && ctx.provider !== 'unknown' ? ` · ${ctx.provider}` : ''}
+              {ctx?.model && ctx.model !== 'unknown' ? ` / ${ctx.model}` : ''}
             </p>
           </div>
         </div>
         <div className="flex gap-2 items-center">
-          <div className="relative">
-            <button
-              onClick={() => setShowModelPicker(!showModelPicker)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-surface-secondary border border-border-light rounded-lg hover:bg-surface-tertiary transition-colors"
-            >
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              {currentModelLabel}
-              <span className="text-gray-400">▾</span>
-            </button>
-            {showModelPicker && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-surface-secondary border border-border-light rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
-                {ollamaModels.length > 0 && (
-                  <div className="p-2">
-                    <div className="text-xs text-text-tertiary px-2 py-1 font-medium">Ollama Models</div>
-                    {ollamaModels.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => { setShowModelPicker(false) }}
-                        className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-surface-tertiary"
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="p-2 border-t border-border-light">
-                  <a href="/settings" className="block text-left px-2 py-1.5 text-sm text-blue-500 hover:underline">
-                    ⚙️ Change provider in Settings
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-          <Button variant="outline" size="sm" onClick={handleStatus}>
-            Status
-          </Button>
-          <Button variant="outline" size="sm" onClick={runDiagnostics}>
-            Diagnose
-          </Button>
-          <Button variant="outline" size="sm" onClick={clearMessages}>
-            Clear
-          </Button>
+          <Badge variant="success">Soul</Badge>
+          <Badge variant="info">Memory</Badge>
+          <Badge variant={healthyCount >= 7 ? 'success' : healthyCount >= 4 ? 'warning' : 'error'}>
+            {healthyCount}/{totalSvc} online
+          </Badge>
+          <Button variant="outline" size="sm" onClick={() => fetchCtx()}>↻</Button>
+          <Button variant="outline" size="sm" onClick={newSession}>New Session</Button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
-          <span>⚠️</span>
-          <span>{error}</span>
-        </div>
-      )}
+      {/* ── Main two-panel layout ── */}
+      <div className="flex-1 flex gap-3 min-h-0">
 
-      {systemStatus && (
-        <div className="mb-4 p-3 bg-surface-secondary rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">System Monitor</span>
-            <button onClick={fetchSystemStatus} className="text-xs text-blue-500 hover:underline">Refresh</button>
-          </div>
-          <div className="grid grid-cols-4 gap-4 text-xs">
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${systemStatus.services?.rdkit?.available ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span>RDKit</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${systemStatus.services?.vina?.available ? 'bg-green-500' : 'bg-yellow-500'}`} />
-              <span>Vina</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${systemStatus.services?.ollama?.available ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span>Ollama</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${systemStatus.gpu?.available ? 'bg-green-500' : 'bg-gray-400'}`} />
-              <span>GPU</span>
-            </div>
-          </div>
-          {systemStatus.jobs && (
-            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-              Jobs: {systemStatus.jobs.completed} completed, {systemStatus.jobs.running} running, {systemStatus.jobs.failed} failed
-            </div>
-          )}
-        </div>
-      )}
+        {/* ── LEFT: Command Centre ── */}
+        <div className="w-64 shrink-0 flex flex-col gap-2 overflow-y-auto">
 
-      {showDiagnostics && diagnostics && (
-        <div className="mb-4 p-4 bg-surface-secondary rounded-lg">
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-medium">System Diagnostics</span>
-            <button onClick={() => setShowDiagnostics(false)} className="text-gray-500 hover:text-gray-700">✕</button>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {diagnostics.diagnostics?.map((d: any, i: number) => (
-              <div key={i} className={`p-2 rounded text-xs ${
-                d.status === 'pass' ? 'bg-green-100 text-green-700' :
-                d.status === 'fail' ? 'bg-red-100 text-red-700' :
-                'bg-gray-100 text-gray-700'
-              }`}>
-                <div className="font-medium">{d.check.toUpperCase()}</div>
-                <div className="truncate">{d.details}</div>
-              </div>
-            ))}
-          </div>
-          {diagnostics.summary && (
-            <div className="mt-2 pt-2 border-t text-xs">
-              Health: <span className={
-                diagnostics.summary.health === 'good' ? 'text-green-600 font-bold' :
-                diagnostics.summary.health === 'degraded' ? 'text-yellow-600 font-bold' :
-                'text-red-600 font-bold'
-              }>{diagnostics.summary.health}</span> ({diagnostics.summary.passed}/{diagnostics.summary.total} checks passed)
+          {/* Platform stats */}
+          <Card className="p-3">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">📊 Platform</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { label: 'Total',   val: ctx?.stats?.total_jobs ?? 0,  col: 'text-blue-500'   },
+                { label: 'Active',  val: activeJobs.length,             col: 'text-yellow-500' },
+                { label: 'Done',    val: completedJobs.length,          col: 'text-green-500'  },
+                { label: 'Failed',  val: failedJobs.length,             col: 'text-red-500'    },
+              ].map(s => (
+                <div key={s.label} className="bg-surface-secondary rounded p-2 text-center">
+                  <div className={`text-lg font-bold ${s.col}`}>{s.val}</div>
+                  <div className="text-xs text-text-tertiary">{s.label}</div>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
-      )}
+          </Card>
 
-      {status && (
-        <div className="mb-4 p-3 bg-surface-secondary rounded-lg flex items-center gap-3">
-          <span className={`w-3 h-3 rounded-full ${status.available ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-          <span className="text-sm text-text-secondary">
-            {status.available
-              ? `Connected to ${status.provider === 'ollama' ? 'Ollama (Local)' : status.provider}`
-              : 'Offline mode - Configure LLM in Settings'}
-          </span>
-          <Badge variant={status.available ? 'success' : 'warning'}>
-            {status.available ? 'Online' : 'Offline'}
-          </Badge>
-        </div>
-      )}
-
-      <Card className="flex-1 flex flex-col overflow-hidden" padding="none">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-6xl mb-3">🧬</div>
-              <h2 className="text-xl font-bold text-text-primary mb-2">
-                Welcome to BioDockify AI
-              </h2>
-              <p className="text-text-secondary mb-6 max-w-md mx-auto">
-                Your AI-powered drug discovery assistant. I can help with molecular docking, property prediction, lead optimization, and more!
-              </p>
-              <div className="mt-8 grid grid-cols-2 gap-4 max-w-lg mx-auto text-left">
-                <div className="bg-surface-secondary rounded-lg p-3">
-                  <div className="font-semibold text-sm mb-1">🔬 Docking</div>
-                  <p className="text-xs text-text-tertiary">Run Vina/GNINA docking simulations</p>
-                </div>
-                <div className="bg-surface-secondary rounded-lg p-3">
-                  <div className="font-semibold text-sm mb-1">📊 Properties</div>
-                  <p className="text-xs text-text-tertiary">Calculate MW, LogP, TPSA, drug-likeness</p>
-                </div>
-                <div className="bg-surface-secondary rounded-lg p-3">
-                  <div className="font-semibold text-sm mb-1">🧪 ADMET</div>
-                  <p className="text-xs text-text-tertiary">Predict absorption and toxicity</p>
-                </div>
-                <div className="bg-surface-secondary rounded-lg p-3">
-                  <div className="font-semibold text-sm mb-1">💊 Optimization</div>
-                  <p className="text-xs text-text-tertiary">Suggest lead compound improvements</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    msg.role === 'user'
-                      ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                      : 'bg-surface-secondary text-text-primary'
-                  }`}
-                >
-                  {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
-                    <div className="flex items-center gap-1 mb-2">
-                      <span className="text-xs opacity-60">Using tools:</span>
-                      {msg.toolsUsed.map((tool) => (
-                        <Badge key={tool} variant="info">
-                          {tool}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  <div
-                    className="text-sm whitespace-pre-wrap prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }}
-                  />
-                  <p
-                    className={`text-xs mt-2 ${
-                      msg.role === 'user' ? 'text-white/60' : 'text-text-tertiary'
-                    }`}
-                  >
-                    {msg.timestamp.toLocaleTimeString()}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-surface-secondary rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl animate-bounce">🤖</span>
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          {/* Services health */}
+          <Card className="p-3">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">🔬 Services</div>
+            <div className="space-y-0.5">
+              {Object.entries(SERVICE_CONFIG).map(([key, { label, icon }]) => {
+                const st = ctx?.services?.[key] ?? 'unknown'
+                const dot = st === 'healthy' ? 'bg-green-500' : st === 'unhealthy' ? 'bg-red-500' : 'bg-gray-400'
+                return (
+                  <div key={key} className="flex items-center gap-1.5 py-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot} ${st === 'healthy' ? 'animate-pulse' : ''}`} />
+                    <span className="text-xs text-text-primary truncate flex-1">{icon} {label}</span>
                   </div>
+                )
+              })}
+            </div>
+          </Card>
+
+          {/* Active jobs */}
+          {activeJobs.length > 0 && (
+            <Card className="p-3">
+              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">⚡ Active ({activeJobs.length})</div>
+              <div className="space-y-1.5">
+                {activeJobs.slice(0, 4).map((job, i) => (
+                  <button
+                    key={i}
+                    className="w-full text-left bg-surface-secondary rounded p-2 hover:bg-surface-tertiary transition-colors"
+                    onClick={() => send(`Explain job status: ${job.job_uuid ?? job.job_name ?? 'unknown'}`)}
+                  >
+                    <div className="text-xs font-medium text-text-primary truncate">{job.job_name ?? job.job_uuid ?? `Job ${i + 1}`}</div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                      <span className="text-xs text-yellow-500">{job.status}</span>
+                      {job.engine && <span className="text-xs text-text-tertiary">· {job.engine}</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Recent jobs */}
+          {(ctx?.recent_jobs?.length ?? 0) > 0 && (
+            <Card className="p-3">
+              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">🕐 Recent</div>
+              <div className="space-y-0.5">
+                {ctx!.recent_jobs.slice(0, 7).map((job, i) => {
+                  const st = job.status?.toLowerCase()
+                  const col = st === 'completed' ? 'text-green-500' : st === 'failed' ? 'text-red-500' : 'text-yellow-500'
+                  return (
+                    <button
+                      key={i}
+                      className="w-full flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-surface-secondary transition-colors"
+                      onClick={() => send(`Tell me about this job: ${job.job_uuid ?? job.job_name}`)}
+                    >
+                      <span className={`text-xs ${col}`}>●</span>
+                      <span className="text-xs text-text-primary truncate flex-1">{job.job_name ?? job.job_uuid ?? '—'}</span>
+                      {job.binding_energy != null && (
+                        <span className="text-xs font-mono text-blue-400 shrink-0">{job.binding_energy.toFixed(1)}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
+
+          {/* AI tools */}
+          <Card className="p-3">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
+              🛠️ Tools ({ctx?.tools_count ?? 0})
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {(ctx?.tools ?? []).map(t => (
+                <span key={t} className="px-1.5 py-0.5 bg-surface-secondary rounded text-xs text-text-secondary font-mono">{t}</span>
+              ))}
+              {!ctx?.tools?.length && <span className="text-xs text-text-tertiary">Loading...</span>}
+            </div>
+          </Card>
+
+          {/* Quick commands */}
+          <Card className="p-3">
+            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">⚡ Quick Commands</div>
+            <div className="space-y-0.5">
+              {QUICK_CMDS.map(cmd => (
+                <button
+                  key={cmd.label}
+                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-surface-secondary transition-colors text-text-primary"
+                  onClick={() => send(cmd.text)}
+                >
+                  {cmd.label}
+                </button>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* ── RIGHT: Commander Chat ── */}
+        <Card className="flex-1 flex flex-col overflow-hidden min-h-0" padding="none">
+
+          {/* Chat header bar */}
+          <div className="px-4 py-2.5 border-b border-border-light flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-text-primary">Commander Chat</span>
+              {activeJobs.length > 0 && (
+                <Badge variant="warning">{activeJobs.length} running</Badge>
+              )}
+              {providerStatus?.available && (
+                <Badge variant="success">{providerStatus.provider}</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-tertiary font-mono">
+                {convId.slice(0, 8)}…
+              </span>
+              <Button variant="outline" size="sm" onClick={newSession}>Clear</Button>
+            </div>
+          </div>
+
+          {/* Error banner */}
+          {error && (
+            <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-red-700 text-xs flex items-center gap-2 shrink-0">
+              <span>⚠️</span>
+              <span className="flex-1">{error}</span>
+              <button className="text-red-400 hover:text-red-600" onClick={() => setError(null)}>✕</button>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center py-6">
+                <div className="text-5xl mb-3">🧬</div>
+                <h2 className="text-lg font-bold text-text-primary mb-1">BioDockify AI Commander</h2>
+                <p className="text-sm text-text-secondary mb-1 max-w-sm">
+                  Central intelligence of BioDockify Studio v4.3.7
+                </p>
+                <p className="text-xs text-text-tertiary mb-6 max-w-xs">
+                  I command all sub-agents, monitor all jobs, and guide you through the complete drug discovery pipeline.
+                </p>
+                <div className="grid grid-cols-3 gap-2 max-w-lg text-left w-full">
+                  {[
+                    { icon: '🔬', title: 'Docking + GNINA',    desc: 'Vina physics + CNN scoring consensus' },
+                    { icon: '📈', title: 'QSAR Modeling',       desc: 'ML-based activity prediction' },
+                    { icon: '💫', title: 'Molecular Dynamics',  desc: 'OpenMM NPT ensemble simulation' },
+                    { icon: '🧲', title: 'Pharmacophore',       desc: 'Virtual screening & 3D matching' },
+                    { icon: '📊', title: 'Analysis Engine',     desc: 'Interactions, ranking, ADMET' },
+                    { icon: '🛡️', title: 'Sentinel Watchdog',   desc: 'Auto-retry & job escalation' },
+                  ].map(f => (
+                    <div key={f.title} className="bg-surface-secondary rounded-lg p-2.5">
+                      <div className="font-semibold text-xs mb-0.5">{f.icon} {f.title}</div>
+                      <p className="text-xs text-text-tertiary">{f.desc}</p>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-xs text-text-tertiary mt-1">
-                  BioDockify AI is thinking...
+                <p className="text-xs text-text-tertiary mt-4">
+                  Use Quick Commands on the left or type a question below ↓
                 </p>
               </div>
-            </div>
-          )}
+            ) : (
+              messages.map(msg => (
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-500 text-white'
+                      : 'bg-surface-secondary text-text-primary'
+                  }`}>
+                    {msg.role === 'assistant' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mb-2">
+                        <span className="text-xs opacity-60">Tools used:</span>
+                        {msg.toolsUsed.map(tool => (
+                          <Badge key={tool} variant="info">{tool}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    <div
+                      className="text-sm whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{ __html: fmt(msg.content) }}
+                    />
+                    <p className={`text-xs mt-1.5 ${msg.role === 'user' ? 'text-white/60' : 'text-text-tertiary'}`}>
+                      {msg.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
 
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div className="p-4 border-t border-border-light bg-gradient-to-r from-surface-secondary to-transparent">
-          <div className="flex gap-3">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              placeholder="Ask about molecular docking, drug-likeness, ADMET, lead optimization..."
-              className="flex-1 px-4 py-3 bg-white border border-border-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              disabled={loading}
-            />
-            <Button
-              onClick={handleSend}
-              disabled={loading || !input.trim()}
-              className="bg-gradient-to-r from-primary to-secondary"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="animate-spin">⚙️</span>
-                  Thinking
-                </span>
-              ) : (
-                'Send'
-              )}
-            </Button>
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-surface-secondary rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🧠</span>
+                    <div className="flex gap-1">
+                      {[0, 150, 300].map(d => (
+                        <span
+                          key={d}
+                          className="w-2 h-2 bg-primary rounded-full animate-bounce"
+                          style={{ animationDelay: `${d}ms` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-tertiary mt-1">Commander is thinking…</p>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-          <p className="text-xs text-text-tertiary mt-2 text-center">
-            Press Enter to send, Shift+Enter for new line • BioDockify AI uses chain-of-thought reasoning
-          </p>
-        </div>
-      </Card>
+
+          {/* Input bar */}
+          <div className="p-3 border-t border-border-light shrink-0">
+            <div className="flex gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+                placeholder="Command — docking, QSAR, MD, pharmacophore, analysis, ADMET…"
+                className="flex-1 px-4 py-2.5 bg-white border border-border-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={loading}
+              />
+              <Button
+                disabled={loading || !input.trim()}
+                className="bg-gradient-to-r from-purple-600 to-blue-500 text-white px-5"
+                onClick={() => send()}
+              >
+                {loading ? '…' : 'Send'}
+              </Button>
+            </div>
+            <p className="text-xs text-text-tertiary mt-1 text-center">
+              Enter to send · {ctx?.tools_count ?? 0} tools available · chain-of-thought reasoning
+            </p>
+          </div>
+        </Card>
+      </div>
     </div>
   )
 }

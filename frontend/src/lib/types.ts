@@ -116,6 +116,7 @@ export interface RMSDResponse {
 
 export interface ChatRequest {
   message: string
+  conversation_id?: string
 }
 
 export interface ChatResponse {
@@ -123,7 +124,26 @@ export interface ChatResponse {
   provider: string
   available: boolean
   tools_used?: string[]
+  conversation_id?: string
+  model?: string
   error?: string
+}
+
+export interface PlatformContext {
+  stats: { total_jobs: number; services: Record<string, string> }
+  recent_jobs: Array<{
+    job_uuid?: string
+    job_name?: string
+    status: string
+    engine?: string
+    created_at?: string
+    binding_energy?: number
+  }>
+  services: Record<string, string>
+  tools_count: number
+  tools: string[]
+  provider: string
+  model?: string
 }
 
 export interface ChatStatus {
