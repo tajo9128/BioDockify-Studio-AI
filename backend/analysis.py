@@ -375,6 +375,7 @@ def calculate_protein_ligand_interactions(
             continue
 
     hbond_donors = {'N', 'O'}
+    hbond_acceptors = {'N', 'O', 'S'}
     hydrophobic_residues = {'ALA', 'VAL', 'LEU', 'ILE', 'MET', 'PHE', 'TRP', 'TYR', 'PRO'}
     aromatic_residues = {'PHE', 'TYR', 'TRP', 'HIS'}
     positive_residues = {'ARG', 'LYS', 'HIS'}
