@@ -25,6 +25,11 @@ export function Docking() {
   const [error, setError] = useState('')
   const [jobs, setJobs] = useState<any[]>([])
 
+  // Progress tracking state
+  const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
+  const [currentStep, setCurrentStep] = useState(0)
+
   // PubChem lookup
   const [pcOpen, setPcOpen]     = useState(false)
   const [pcQuery, setPcQuery]   = useState('')
@@ -78,26 +83,127 @@ export function Docking() {
     setRunning(true)
     setError('')
     setResult(null)
+    
+    // Reset progress state
+    setProgress(0)
+    setProgressMessage('Initialising...')
+    setCurrentStep(0)
+    
     try {
-      const fd = new FormData()
-      fd.append('receptor_file', receptorFile)
-      fd.append('ligand_file', ligandFile)
-      fd.append('center_x', String(center.x))
-      fd.append('center_y', String(center.y))
-      fd.append('center_z', String(center.z))
-      fd.append('size_x', String(size.x))
-      fd.append('size_y', String(size.y))
-      fd.append('size_z', String(size.z))
-      fd.append('exhaustiveness', String(exhaustiveness))
-      fd.append('scoring', 'vina')
-      const res = await fetch('/api/docking/run', { method: 'POST', body: fd })
-      const data = await res.json()
+      // Read file contents
+      const receptorContent = await readFileContent(receptorFile)
+      const ligandContent = await readFileContent(ligandFile)
+      
+      // Start docking via API
+      const response = await fetch('/api/docking/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receptor_content: receptorContent,
+          ligand_content: ligandContent,
+          receptor_filename: receptorFile.name,
+          ligand_filename: ligandFile.name,
+          center_x: center.x,
+          center_y: center.y,
+          center_z: center.z,
+          size_x: size.x,
+          size_y: size.y,
+          size_z: size.z,
+          exhaustiveness,
+          scoring: 'vina'
+        })
+      })
+      
+      const accepted = await response.json()
+      if (accepted.error) throw new Error(accepted.error)
+      
+      const jobId = accepted.job_id
+      
+      // Connect to SSE stream for real-time progress
+      const eventSource = new EventSource(`/dock/${jobId}/stream`)
+      
+      await new Promise<void>((resolve, reject) => {
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            setProgress(data.progress)
+            setProgressMessage(data.message)
+            setCurrentStep(getStepFromProgress(data.progress))
+            
+            if (data.status === 'completed') {
+              eventSource.close()
+              resolve()
+            } else if (data.status === 'failed') {
+              eventSource.close()
+              reject(new Error(data.message || 'Docking failed'))
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        eventSource.onerror = () => {
+          eventSource.close()
+          // Fall back to polling if SSE fails
+          pollUntilComplete(jobId).then(resolve).catch(reject)
+        }
+      })
+      
+      // Fetch final results
+      const resultRes = await fetch(`/api/docking/result/${jobId}`)
+      const data = await resultRes.json()
+      
       if (data.error) setError(data.error)
-      else { setResult(data); fetchJobs() }
+      else { 
+        setResult(data)
+        setJobs(prev => [{ 
+          job_uuid: jobId, 
+          job_name: `Docking ${new Date().toLocaleTimeString()}`,
+          status: 'completed',
+          binding_energy: data.best_score,
+          engine: data.engine
+        }, ...prev])
+      }
     } catch (e: any) {
       setError(e.message || 'Docking failed')
     }
+    
     setRunning(false)
+  }
+  
+  const pollUntilComplete = async (jobId: string): Promise<void> => {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const res = await fetch(`/dock/${jobId}/status`)
+      const status = await res.json()
+      
+      setProgress(status.progress)
+      setProgressMessage(status.message)
+      setCurrentStep(getStepFromProgress(status.progress))
+      
+      if (status.status === 'completed') return
+      if (status.status === 'failed') throw new Error(status.message)
+    }
+    throw new Error('Docking timed out')
+  }
+  
+  const getStepFromProgress = (pct: number): number => {
+    if (pct < 5) return 0
+    if (pct < 25) return 1  // Protein prep
+    if (pct < 45) return 2  // Ligand prep
+    if (pct < 50) return 3  // Grid config
+    if (pct < 85) return 4  // Docking
+    if (pct < 100) return 5 // Processing
+    return 6 // Complete
+  }
+  
+  const readFileContent = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = e => resolve(e.target?.result as string)
+      reader.onerror = reject
+      reader.readAsText(file)
+    })
   }
 
   return (
@@ -265,10 +371,58 @@ export function Docking() {
           </div>
         )}
         {running && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin text-3xl mb-3">⟳</div>
-              <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Running AutoDock Vina…</p>
+          <div className="flex flex-col items-center justify-center h-full p-8">
+            <div className="w-full max-w-md">
+              {/* Progress header */}
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  {currentStep === 0 && 'Initialising...'}
+                  {currentStep === 1 && 'Preparing Protein'}
+                  {currentStep === 2 && 'Preparing Ligand'}
+                  {currentStep === 3 && 'Configuring Grid'}
+                  {currentStep === 4 && 'Running Docking'}
+                  {currentStep === 5 && 'Processing Results'}
+                  {currentStep === 6 && 'Complete'}
+                </span>
+                <span className={`text-sm font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                  {progress}%
+                </span>
+              </div>
+              
+              {/* Progress bar */}
+              <div className={`w-full h-3 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                <div 
+                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out rounded-full"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              
+              {/* Current message from backend */}
+              <div className={`mt-4 p-3 rounded-lg border ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-start gap-2">
+                  <div className="animate-pulse w-2 h-2 rounded-full bg-blue-500 mt-1.5" />
+                  <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {progressMessage || 'Initialising docking pipeline...'}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Steps indicator */}
+              <div className="flex justify-between mt-4 px-1">
+                {['Init', 'Protein', 'Ligand', 'Grid', 'Dock', 'Save'].map((label, idx) => (
+                  <div key={label} className="flex flex-col items-center">
+                    <div className={`w-2 h-2 rounded-full transition-colors ${
+                      idx < currentStep ? 'bg-green-500' : 
+                      idx === currentStep ? 'bg-blue-500 animate-pulse' : 
+                      isDark ? 'bg-gray-600' : 'bg-gray-300'
+                    }`} />
+                    <span className={`text-xs mt-1 ${
+                      idx <= currentStep ? (isDark ? 'text-gray-400' : 'text-gray-600') : 
+                      (isDark ? 'text-gray-600' : 'text-gray-400')
+                    }`}>{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
