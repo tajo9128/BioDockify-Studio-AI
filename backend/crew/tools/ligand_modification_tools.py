@@ -130,7 +130,7 @@ def parse_modification_prompt(prompt: str, parent_smiles: str) -> ModificationPl
         strategy=strategy,
         transformations=transformations[:3],
         property_constraints={
-            **ModificationPlan.model_fields["property_constraints"].default,
+            **ModificationPlan.model_fields["property_constraints"].default_factory(),
             **constraints,
         },
         max_variants=50,
