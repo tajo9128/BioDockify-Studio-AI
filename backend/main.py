@@ -6219,6 +6219,30 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+
+
+def _ollama_generate(
+    prompt: str, model: str = OLLAMA_MODEL, timeout: int = 60
+) -> str | None:
+    """Send prompt to Ollama, return response text or None on failure."""
+    try:
+        resp = requests.post(
+            OLLAMA_URL,
+            json={"model": model, "prompt": prompt, "stream": False},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("response", "")
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"Ollama connection failed at {OLLAMA_URL}")
+        return None
+    except requests.exceptions.Timeout:
+        logger.warning(f"Ollama request timed out after {timeout}s")
+        return None
+    except Exception as e:
+        logger.warning(f"Ollama request failed: {e}")
+        return None
 
 
 @app.post("/api/ai/generate-ligands")
@@ -6238,16 +6262,13 @@ Rules:
 - Diverse scaffolds
 - Output ONLY SMILES, one per line, no numbering, no explanations"""
 
-    try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": "qwen3:4b", "prompt": full_prompt, "stream": False},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        text = resp.json().get("response", "")
-    except Exception as e:
-        return {"error": f"LLM generation failed: {str(e)}", "molecules": []}
+    text = _ollama_generate(full_prompt, timeout=90)
+    if text is None:
+        return {
+            "error": f"Ollama not available at {OLLAMA_URL}. Start Ollama and pull model: `ollama pull {OLLAMA_MODEL}`",
+            "molecules": [],
+            "help": "Run: docker compose up -d ollama && docker exec docking-ollama ollama pull qwen3:4b",
+        }
 
     molecules = []
     seen = set()
@@ -6319,16 +6340,13 @@ Generate 5 improved SMILES. Rules:
 - MW 150-500, LogP < 5
 - Output ONLY SMILES, one per line"""
 
-    try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": "qwen3:4b", "prompt": full_prompt, "stream": False},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        text = resp.json().get("response", "")
-    except Exception as e:
-        return {"error": f"LLM optimization failed: {str(e)}", "molecules": []}
+    text = _ollama_generate(full_prompt, timeout=90)
+    if text is None:
+        return {
+            "error": f"Ollama not available at {OLLAMA_URL}. Start Ollama and pull model: `ollama pull {OLLAMA_MODEL}`",
+            "molecules": [],
+            "help": "Run: docker compose up -d ollama && docker exec docking-ollama ollama pull qwen3:4b",
+        }
 
     molecules = []
     seen = {smiles}
@@ -6361,6 +6379,24 @@ Generate 5 improved SMILES. Rules:
         "molecules": molecules,
         "original": smiles,
         "goal": goal,
+    }
+
+
+@app.get("/api/ai/ollama-status")
+async def ollama_status():
+    """Check if Ollama is available and which models are loaded."""
+    try:
+        tags_url = OLLAMA_URL.replace("/api/generate", "/api/tags")
+        resp = requests.get(tags_url, timeout=5)
+        if resp.ok:
+            models = [m["name"] for m in resp.json().get("models", [])]
+            return {"available": True, "models": models, "url": OLLAMA_URL}
+    except Exception:
+        pass
+    return {
+        "available": False,
+        "url": OLLAMA_URL,
+        "help": f"Run: ollama pull {OLLAMA_MODEL}",
     }
 
 
