@@ -44,6 +44,8 @@ export function Results() {
   const [selectedPose, setSelectedPose] = useState<DockingResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'all' | 'completed' | 'running' | 'failed'>('all')
+  const [jobFiles, setJobFiles] = useState<Record<string, { filename: string; url: string | null; size_bytes?: number; exists: boolean }>>({}) 
+  const [logText, setLogText] = useState<string>('')
 
   const bgClass = isDark ? 'bg-gray-900' : 'bg-gray-50'
   const cardBg = isDark ? 'bg-gray-800' : 'bg-white'
@@ -113,13 +115,22 @@ export function Results() {
   const selectJob = async (job: Job) => {
     setSelectedJob(job)
     setSelectedPose(null)
+    setJobFiles({})
+    setLogText('')
     try {
-      const res = await fetch(`/jobs/${job.job_uuid}/results`)
-      const data = await res.json()
-      const results = data.results || []
+      const [resResults, resFiles] = await Promise.all([
+        fetch(`/jobs/${job.job_uuid}/results`),
+        fetch(`/jobs/${job.job_uuid}/files`),
+      ])
+      const dataResults = await resResults.json()
+      const results = dataResults.results || []
       setSelectedResults(results)
-      if (results.length > 0) {
-        setSelectedPose(results[0])
+      if (results.length > 0) setSelectedPose(results[0])
+
+      if (resFiles.ok) {
+        const dataFiles = await resFiles.json()
+        setJobFiles(dataFiles.files || {})
+        setLogText(dataFiles.log_text || '')
       }
     } catch (err) {
       console.error('Failed to fetch results:', err)
@@ -151,6 +162,27 @@ export function Results() {
     a.download = `${pose.ligand_name || `pose_${pose.pose_id}`}.pdb`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleSnapshot = () => {
+    if (!viewerRef.current) return
+    try {
+      const uri = viewerRef.current.pngURI()
+      const a = document.createElement('a')
+      a.href = uri
+      a.download = `snapshot_${selectedJob?.job_uuid || 'pose'}.png`
+      a.click()
+    } catch (e) {
+      console.error('Snapshot failed', e)
+    }
+  }
+
+  const handleDownloadFile = (url: string, filename: string) => {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.target = '_blank'
+    a.click()
   }
 
   const filteredJobs = jobs.filter(job => {
@@ -383,20 +415,72 @@ export function Results() {
                   </div>
                 </div>
 
+                {Object.keys(jobFiles).length > 0 && (
+                  <div className={`${cardBg} rounded-xl ${borderClass} border mb-6`}>
+                    <div className={`p-4 ${borderClass} border-b flex items-center justify-between`}>
+                      <h2 className={`font-semibold ${textClass}`}>📦 Download All Files</h2>
+                      {logText && (
+                        <button
+                          onClick={() => {
+                            const blob = new Blob([logText], { type: 'text/plain' })
+                            handleDownloadFile(URL.createObjectURL(blob), `log_${selectedJob?.job_uuid}.txt`)
+                          }}
+                          className={`text-xs px-2.5 py-1 rounded font-medium ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                        >
+                          ⬇ Log Text
+                        </button>
+                      )}
+                    </div>
+                    <div className="p-4 flex flex-wrap gap-2">
+                      {(Object.entries(jobFiles) as [string, { filename: string; url: string | null; size_bytes?: number; exists: boolean }][]).map(([key, info]) =>
+                        info.exists && info.url ? (
+                          <a
+                            key={key}
+                            href={info.url}
+                            download={info.filename}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                              isDark
+                                ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-200'
+                                : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-700'
+                            }`}
+                          >
+                            <span>{key === 'docking' ? '🧬' : key === 'log' ? '📄' : key === 'receptor' ? '🔵' : key === 'ligand' ? '🟢' : '📁'}</span>
+                            <span className="capitalize">{key}</span>
+                            <span className={`${subtextClass}`}>({info.filename.split('.').pop()?.toUpperCase()})</span>
+                            {info.size_bytes && <span className={subtextClass}>· {(info.size_bytes / 1024).toFixed(1)}KB</span>}
+                          </a>
+                        ) : null
+                      )}
+                    </div>
+                    {logText && (
+                      <details className={`border-t ${borderClass}`}>
+                        <summary className={`px-4 py-2 cursor-pointer text-xs font-medium ${subtextClass} hover:opacity-80`}>View Docking Log</summary>
+                        <pre className={`px-4 pb-4 text-xs overflow-x-auto whitespace-pre-wrap ${isDark ? 'text-green-300' : 'text-gray-600'}`}>{logText}</pre>
+                      </details>
+                    )}
+                  </div>
+                )}
+
                 {selectedPose && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className={`${cardBg} rounded-xl ${borderClass} border`}>
                       <div className={`p-4 ${borderClass} border-b flex items-center justify-between`}>
                         <h2 className={`font-semibold ${textClass}`}>3D Viewer — {selectedPose.ligand_name || `Pose ${selectedPose.pose_id}`}</h2>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {selectedPose.pdb_data && (
                             <button
                               onClick={() => handleDownloadPDB(selectedPose)}
                               className={`text-xs px-2.5 py-1 rounded font-medium ${isDark ? 'bg-blue-700 hover:bg-blue-600 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
                             >
-                              Download PDB
+                              ⬇ PDB
                             </button>
                           )}
+                          <button
+                            onClick={handleSnapshot}
+                            className={`text-xs px-2.5 py-1 rounded font-medium ${isDark ? 'bg-purple-700 hover:bg-purple-600 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'}`}
+                          >
+                            📷 Snapshot
+                          </button>
                           <button
                             onClick={() => window.open(`/viewer?jobUuid=${selectedJob?.job_uuid}`, '_blank')}
                             className={`text-xs px-2.5 py-1 rounded font-medium ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}

@@ -834,6 +834,47 @@ def remove_job(job_uuid: str):
         raise HTTPException(status_code=500, detail="Failed to delete job")
 
 
+@app.get("/jobs/{job_uuid}/files")
+def get_job_files(job_uuid: str):
+    """Return download URLs for all output files of a completed job."""
+    job = get_job(job_uuid)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    files_raw = {}
+    try:
+        if job.get("files_json"):
+            files_raw = json.loads(job["files_json"])
+    except Exception:
+        pass
+
+    download_urls = {}
+    file_info = {}
+    for key, path in files_raw.items():
+        if path and os.path.exists(path):
+            fname = os.path.basename(path)
+            url = f"/storage/{fname}"
+            download_urls[key] = url
+            file_info[key] = {
+                "filename": fname,
+                "url": url,
+                "size_bytes": os.path.getsize(path),
+                "exists": True,
+            }
+        else:
+            file_info[key] = {"filename": path, "url": None, "exists": False}
+
+    log_text = job.get("log_text") or ""
+
+    return {
+        "job_uuid": job_uuid,
+        "status": job.get("status"),
+        "download_urls": download_urls,
+        "files": file_info,
+        "log_text": log_text[:4096] if log_text else "",
+    }
+
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file"""

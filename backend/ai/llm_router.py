@@ -330,12 +330,10 @@ class OllamaProvider:
 
     def is_available(self) -> bool:
         try:
-            response = requests.get(f"{self.url}/api/tags", timeout=OLLAMA_TIMEOUT)
+            response = requests.get(f"{self.url}/api/tags", timeout=3)
             if response.status_code == 200:
                 data = response.json()
                 models = data.get("models", [])
-                if models and any(self.model in m.get("name", "") for m in models):
-                    return True
                 if models:
                     logger.info(f"Ollama has {len(models)} model(s)")
                     return True
