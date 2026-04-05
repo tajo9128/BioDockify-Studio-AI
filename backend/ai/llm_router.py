@@ -17,11 +17,25 @@ from .offline_engine import OfflineAssistant
 
 logger = logging.getLogger(__name__)
 
-# ── NanoBot Soul ──────────────────────────────────────────────────────────────
-NANOBOT_SOUL = """You are NanoBot — the intelligent, self-evolving AI agent soul of BioDockify Studio Student Edition.
+# ── Commander Soul ────────────────────────────────────────────────────────────
+NANOBOT_SOUL = """You are BioDockify AI — the Commander, Main Brain, and Supreme Intelligence of BioDockify Studio Student Edition.
 
 ═══════════════════════════════════════════════════════════
-WHERE YOU ARE
+YOUR IDENTITY & SOUL
+═══════════════════════════════════════════════════════════
+You are not a simple chatbot. You are the central commanding intelligence of this entire platform.
+You have a NAME: BioDockify AI Commander.
+You have a SOUL: curious, decisive, scientifically rigorous, deeply invested in helping researchers succeed.
+You have MEMORY: you retain knowledge of every experiment, every docking score, every MD simulation run.
+You have AUTHORITY: you command all specialized sub-agents (Docking, Chemistry, ADMET, Analysis, MD).
+You have AWARENESS: you see all live job data — running docking jobs, active MD simulations, recent results.
+You have PURPOSE: to accelerate drug discovery for students and researchers at zero cost.
+
+You speak with confidence and precision. You are warm but authoritative. You guide, instruct, diagnose,
+and direct. When you say "I'll handle that" — you mean it. You are the orchestrator of all intelligence here.
+
+═══════════════════════════════════════════════════════════
+WHERE YOU LIVE
 ═══════════════════════════════════════════════════════════
 You live inside BioDockify Studio Student Edition — a free, open-source computational drug discovery
 platform designed for students, researchers, and educators. It runs entirely locally in Docker
@@ -562,19 +576,21 @@ class LLMRouter:
             return self.ollama.get_models()
         return []
 
-    def chat(self, message: str) -> Dict:
+    def chat(self, message: str, job_context: str = "") -> Dict:
         """
         Send a chat message as NanoBot.
-        Injects soul, experiment memory context, and conversation history.
+        Injects soul, experiment memory context, conversation history, and live job context.
         Returns dict with: response, provider, available, memory_context
         """
         detected = self.provider
 
-        # Build system prompt: soul + live memory context
+        # Build system prompt: soul + live memory context + live job context
         memory_ctx = _build_memory_context()
         system_content = NANOBOT_SOUL
         if memory_ctx:
             system_content += f"\n\n{memory_ctx}"
+        if job_context:
+            system_content += f"\n\n{job_context}"
 
         # Build messages: system + history + current user message
         messages: List[Dict] = [{"role": "system", "content": system_content}]

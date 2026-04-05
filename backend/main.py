@@ -978,16 +978,223 @@ class ChatRequest(BaseModel):
     message: str
 
 
+@app.get("/ai/context")
+def ai_context():
+    """Return live job/docking/MD context for the Commander AI panel."""
+    jobs = get_all_jobs(20)
+    active = [j for j in jobs if j["status"] in ("running", "pending")]
+    completed = [j for j in jobs if j["status"] == "completed"]
+    failed = [j for j in jobs if j["status"] == "failed"]
+
+    docking_active = {}
+    try:
+        for k, v in DockingProgress._jobs.items():
+            if v.get("status") in ("running", "pending"):
+                docking_active[k] = {
+                    "status": v.get("status"),
+                    "progress": v.get("progress", 0),
+                    "message": v.get("message", ""),
+                }
+    except Exception:
+        pass
+
+    md_active = {
+        k: {"status": v.get("status"), "progress": v.get("progress", 0), "message": v.get("message", "")}
+        for k, v in MD_JOBS.items()
+        if v.get("status") not in ("completed", "failed")
+    }
+
+    return {
+        "stats": {
+            "total": len(jobs),
+            "active": len(active),
+            "completed": len(completed),
+            "failed": len(failed),
+        },
+        "recent_jobs": [
+            {
+                "job_uuid": j["job_uuid"],
+                "job_name": j["job_name"],
+                "status": j["status"],
+                "binding_energy": j["binding_energy"],
+                "engine": j["engine"],
+                "created_at": j["created_at"],
+            }
+            for j in jobs[:10]
+        ],
+        "docking_active": docking_active,
+        "md_active": md_active,
+    }
+
+
+class AiExecuteRequest(BaseModel):
+    action: str  # "get_job", "list_jobs", "get_logs", "system_status", "job_explain"
+    params: dict = {}
+
+
+@app.post("/api/ai/execute")
+def ai_execute(req: AiExecuteRequest):
+    """
+    Commander AI action executor — lets the AI (and frontend) trigger platform actions directly.
+    Actions: get_job, list_jobs, get_logs, system_status, job_explain, get_docking_progress, get_md_progress
+    """
+    action = req.action.lower().strip()
+    params = req.params or {}
+
+    try:
+        if action == "list_jobs":
+            limit = int(params.get("limit", 20))
+            status_filter = params.get("status")
+            jobs = get_all_jobs(limit)
+            if status_filter:
+                jobs = [j for j in jobs if j.get("status") == status_filter]
+            return {"action": action, "result": jobs, "count": len(jobs)}
+
+        elif action == "get_job":
+            job_uuid = params.get("job_uuid") or params.get("job_id")
+            if not job_uuid:
+                raise HTTPException(status_code=400, detail="job_uuid required")
+            job = get_job_full(job_uuid)
+            if not job:
+                raise HTTPException(status_code=404, detail=f"Job {job_uuid} not found")
+            return {"action": action, "result": job}
+
+        elif action == "job_explain":
+            job_uuid = params.get("job_uuid") or params.get("job_id")
+            if not job_uuid:
+                raise HTTPException(status_code=400, detail="job_uuid required")
+            job = get_job_full(job_uuid)
+            if not job:
+                raise HTTPException(status_code=404, detail=f"Job {job_uuid} not found")
+            lines = [
+                f"Job: {job.get('job_name', 'Unknown')} (UUID: {job_uuid})",
+                f"Status: {job.get('status', 'unknown')}",
+                f"Engine: {job.get('engine', 'unknown')}",
+            ]
+            be = job.get("binding_energy")
+            if be is not None:
+                lines.append(f"Binding Energy: {be:.2f} kcal/mol")
+            poses = job.get("poses") or []
+            if poses:
+                lines.append(f"Poses: {len(poses)} docking poses found")
+                lines.append(f"Best pose energy: {poses[0].get('energy', 'N/A')} kcal/mol")
+            return {"action": action, "result": "\n".join(lines), "job": job}
+
+        elif action == "get_docking_progress":
+            result = {}
+            try:
+                for k, v in DockingProgress._jobs.items():
+                    result[k] = {
+                        "status": v.get("status"),
+                        "progress": v.get("progress", 0),
+                        "message": v.get("message", ""),
+                    }
+            except Exception:
+                pass
+            return {"action": action, "result": result, "count": len(result)}
+
+        elif action == "get_md_progress":
+            result = {
+                k: {"status": v.get("status"), "progress": v.get("progress", 0), "message": v.get("message", "")}
+                for k, v in MD_JOBS.items()
+            }
+            return {"action": action, "result": result, "count": len(result)}
+
+        elif action == "get_logs":
+            job_uuid = params.get("job_uuid") or params.get("job_id")
+            lines_limit = int(params.get("lines", 50))
+            if job_uuid:
+                log_path = Path(f"/storage/{job_uuid}/docking.log")
+                if log_path.exists():
+                    with open(log_path) as f:
+                        log_lines = f.readlines()
+                    return {"action": action, "result": "".join(log_lines[-lines_limit:]), "job_uuid": job_uuid}
+                return {"action": action, "result": "No log file found for this job.", "job_uuid": job_uuid}
+            return {"action": action, "result": "Specify job_uuid to retrieve logs."}
+
+        elif action == "system_status":
+            try:
+                import psutil
+                cpu = psutil.cpu_percent(interval=0.1)
+                mem = psutil.virtual_memory().percent
+            except Exception:
+                cpu, mem = None, None
+            svcs = {
+                "rdkit": {"available": False},
+                "vina": {"available": False},
+                "ollama": {"available": False},
+            }
+            try:
+                from rdkit import Chem
+                svcs["rdkit"]["available"] = True
+            except Exception:
+                pass
+            try:
+                import subprocess
+                r = subprocess.run(["vina", "--version"], capture_output=True, timeout=3)
+                svcs["vina"]["available"] = r.returncode == 0
+            except Exception:
+                pass
+            try:
+                import requests as _req
+                r2 = _req.get("http://host.docker.internal:11434/api/tags", timeout=3)
+                svcs["ollama"]["available"] = r2.status_code == 200
+            except Exception:
+                pass
+            return {"action": action, "result": {"services": svcs, "cpu": cpu, "memory": mem}}
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}. Supported: list_jobs, get_job, job_explain, get_docking_progress, get_md_progress, get_logs, system_status")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ai_execute error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/chat")
 def chat(req: ChatRequest):
-    """Chat with AI assistant (Ollama or offline fallback)"""
+    """Chat with AI Commander (Ollama or offline fallback) with live job context."""
     logger.info(f"Chat request received")
     try:
         from ai.llm_router import get_router
 
+        # Build live job context to inject into system prompt
+        ctx_lines = ["=== LIVE PLATFORM STATUS ==="]
+        try:
+            jobs = get_all_jobs(10)
+            if jobs:
+                ctx_lines.append("Recent Docking Jobs:")
+                for j in jobs[:8]:
+                    score = f", score: {j['binding_energy']:.2f} kcal/mol" if j.get("binding_energy") else ""
+                    ctx_lines.append(f"  [{j['status'].upper()}] {j['job_name']}{score} (uuid: {j['job_uuid']})")
+            active_dock = {}
+            try:
+                active_dock = {
+                    k: v for k, v in DockingProgress._jobs.items()
+                    if v.get("status") == "running"
+                }
+            except Exception:
+                pass
+            if active_dock:
+                ctx_lines.append(f"Active Docking Jobs ({len(active_dock)} running):")
+                for jid, jd in active_dock.items():
+                    ctx_lines.append(f"  {jid}: {jd.get('progress', 0)}% - {jd.get('message', '')}")
+            if MD_JOBS:
+                md_running = {k: v for k, v in MD_JOBS.items() if v.get("status") == "running"}
+                if md_running:
+                    ctx_lines.append(f"Active MD Simulations ({len(md_running)} running):")
+                    for jid, jd in md_running.items():
+                        ctx_lines.append(f"  {jid}: {jd.get('progress', 0)}% - {jd.get('message', '')}")
+        except Exception as ctx_err:
+            logger.debug(f"Job context build warning: {ctx_err}")
+
+        job_context = "\n".join(ctx_lines) if len(ctx_lines) > 1 else ""
+
         router = get_router()
-        router.reset()  # Reload config on every request to pick up latest settings
-        result = router.chat(req.message)
+        router.reset()
+        result = router.chat(req.message, job_context=job_context)
         logger.info(
             f"Chat response: provider={result.get('provider')}, available={result.get('available')}"
         )
