@@ -400,8 +400,9 @@ def _is_simple_organic(mol) -> bool:
 
 
 def _mol_to_pdbqt_meeko(mol, is_ligand: bool = True, **kwargs) -> str:
-    """Meeko-based PDBQT conversion."""
+    """Meeko-based PDBQT conversion using PDBQTWriterLegacy (stable API)."""
     from meeko import MoleculePreparation
+    from meeko import PDBQTWriterLegacy
     from rdkit import Chem
     from rdkit.Chem import AllChem
 
@@ -416,21 +417,12 @@ def _mol_to_pdbqt_meeko(mol, is_ligand: bool = True, **kwargs) -> str:
     prep_params = {"add_atom_types": True, "merge_these_atom_types": ("H",)}
     prep_params.update(kwargs)
     preparator = MoleculePreparation(**prep_params)
-    setups = preparator.prepare(mol_copy)
-    if not setups:
+    mol_setups = preparator.prepare(mol_copy)
+    if not mol_setups:
         raise ValueError("Meeko produced no setups")
 
-    # Handle both old API (returns list) and new API (returns string)
-    result = preparator.write(setups[0])
-    if isinstance(result, str):
-        pdbqt_content = result
-    elif isinstance(result, (list, tuple)) and len(result) > 0:
-        pdbqt_content = result[0]
-    elif isinstance(result, bool):
-        raise ValueError(f"Meeko write() returned bool — incompatible meeko version")
-    else:
-        raise ValueError(f"Meeko write() returned unexpected type: {type(result)}")
-
+    mol_setup = mol_setups[0]
+    pdbqt_content, _, _ = PDBQTWriterLegacy.write_string(mol_setup)
     if not pdbqt_content or not pdbqt_content.strip():
         raise ValueError("Meeko produced empty PDBQT")
 
@@ -438,28 +430,31 @@ def _mol_to_pdbqt_meeko(mol, is_ligand: bool = True, **kwargs) -> str:
 
 
 def _mol_to_pdbqt_openbabel(mol, is_ligand: bool = True) -> str:
-    """Open Babel PDBQT conversion."""
-    try:
-        from openbabel import openbabel as ob
-    except ImportError:
-        raise ImportError("Open Babel not available")
+    """Open Babel PDBQT conversion via CLI (more reliable than Python bindings)."""
+    import tempfile
 
-    from rdkit import Chem
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sdf_path = os.path.join(tmpdir, "mol.sdf")
+        pdbqt_path = os.path.join(tmpdir, "mol.pdbqt")
 
-    obConversion = ob.OBConversion()
-    obConversion.SetInAndOutFormats("sdf", "pdbqt")
+        from rdkit import Chem
 
-    obMol = ob.OBMol()
-    sdf_block = Chem.MolToMolBlock(mol)
-    if not sdf_block:
-        raise ValueError("Cannot generate SDF block from RDKit mol")
+        mol_with_h = Chem.AddHs(Chem.Mol(mol)) if is_ligand else Chem.Mol(mol)
+        writer = Chem.SDWriter(sdf_path)
+        writer.write(mol_with_h)
+        writer.close()
 
-    obConversion.ReadString(obMol, sdf_block)
-    if is_ligand:
-        obMol.AddHydrogens()
-    obMol.ComputeGasteigerCharges()
+        cmd = ["obabel", sdf_path, "-O", pdbqt_path, "--partialcharge", "gasteiger"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f"Open Babel failed: {result.stderr}")
 
-    pdbqt_content = obConversion.WriteString(obMol)
+        if not os.path.exists(pdbqt_path):
+            raise RuntimeError("Open Babel produced no output file")
+
+        with open(pdbqt_path) as f:
+            pdbqt_content = f.read()
+
     if not pdbqt_content or not pdbqt_content.strip():
         raise ValueError("Open Babel produced empty PDBQT")
 

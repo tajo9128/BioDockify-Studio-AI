@@ -25,6 +25,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl bzip2 ca-certificates tzdata \
     libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
+    openbabel \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GNINA CLI from GitHub release
