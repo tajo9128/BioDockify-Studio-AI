@@ -1,5 +1,5 @@
-# BioDockify Studio AI - Single Container v2.4.0
-# All-in-one: React frontend + FastAPI backend + RDKit + CrewAI
+# BioDockify Studio AI - Single Container v4.3.5
+# All-in-one: React frontend + FastAPI backend + RDKit + CrewAI + GPU support
 
 # Stage 1: Build React frontend
 FROM node:20-alpine AS frontend-builder
@@ -9,12 +9,12 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python with RDKit and scientific packages
-FROM python:3.11-slim
+# Stage 2: Python with RDKit and scientific packages (CUDA base for GPU)
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 
 LABEL maintainer="BioDockify"
-LABEL description="BioDockify Studio AI v2.4.0 - Single container with RDKit + CrewAI"
-LABEL version="2.4.0"
+LABEL description="BioDockify Studio AI v4.3.5 - Single container with RDKit + CrewAI + GPU"
+LABEL version="4.3.5"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -22,11 +22,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+# Install system dependencies + Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3-pip \
     wget curl bzip2 ca-certificates tzdata \
     libglib2.0-0 libsm6 libxml2 libxslt1.1 libxrender1 libxext6 \
     openbabel \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
 
 # Install GNINA CLI from GitHub release
 RUN wget -q https://github.com/gnina/gnina/releases/download/v1.0.3/gnina -O /usr/local/bin/gnina \
