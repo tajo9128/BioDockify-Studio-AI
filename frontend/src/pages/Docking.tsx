@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import { Link } from 'react-router-dom'
+
+const PC = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug'
+
+interface PcResult {
+  cid: number
+  name: string
+  formula: string
+  mw: string
+  smiles: string
+}
 
 export function Docking() {
   const { theme } = useTheme()
@@ -13,6 +24,37 @@ export function Docking() {
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState('')
   const [jobs, setJobs] = useState<any[]>([])
+
+  // PubChem lookup
+  const [pcOpen, setPcOpen]     = useState(false)
+  const [pcQuery, setPcQuery]   = useState('')
+  const [pcBusy, setPcBusy]     = useState(false)
+  const [pcResult, setPcResult] = useState<PcResult | null>(null)
+  const [pcErr, setPcErr]       = useState<string | null>(null)
+  const [copied, setCopied]     = useState(false)
+
+  const searchPubChem = async () => {
+    const q = pcQuery.trim()
+    if (!q) return
+    setPcBusy(true); setPcErr(null); setPcResult(null)
+    try {
+      const cidRes = await fetch(`${PC}/compound/name/${encodeURIComponent(q)}/cids/JSON`)
+      if (!cidRes.ok) throw new Error('Compound not found')
+      const cid: number = (await cidRes.json()).IdentifierList.CID[0]
+      const propRes = await fetch(
+        `${PC}/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,IsomericSMILES/JSON`
+      )
+      const p = (await propRes.json()).PropertyTable.Properties[0]
+      setPcResult({ cid, name: p.IUPACName ?? q, formula: p.MolecularFormula ?? '', mw: String(p.MolecularWeight ?? ''), smiles: p.IsomericSMILES ?? '' })
+    } catch (e: any) { setPcErr(e.message ?? 'Not found') }
+    finally { setPcBusy(false) }
+  }
+
+  const copySMILES = () => {
+    if (!pcResult) return
+    navigator.clipboard.writeText(pcResult.smiles)
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
+  }
 
   useEffect(() => { fetchJobs() }, [])
 
@@ -63,9 +105,87 @@ export function Docking() {
       {/* Left - Form */}
       <div className="w-96 p-6 border-r overflow-y-auto" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }}>
         <h1 className="text-xl font-bold mb-1">AutoDock Vina</h1>
-        <p className={`text-xs mb-6 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+        <p className={`text-xs mb-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
           Upload prepared PDBQT files. Use AutoDock Tools or other software to prepare files.
         </p>
+
+        {/* ── PubChem Lookup ── */}
+        <div className={`mb-4 rounded-lg border ${isDark ? 'border-blue-800 bg-blue-950/40' : 'border-blue-200 bg-blue-50'}`}>
+          <button
+            onClick={() => setPcOpen(o => !o)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium ${
+              isDark ? 'text-blue-300' : 'text-blue-700'
+            }`}
+          >
+            <span>🔬 Find ligand on PubChem by name</span>
+            <span>{pcOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {pcOpen && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  className={`flex-1 px-2.5 py-1.5 rounded border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    isDark ? 'bg-gray-800 border-gray-600 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                  }`}
+                  placeholder="e.g. Ibuprofen, Aspirin, Caffeine…"
+                  value={pcQuery}
+                  onChange={e => setPcQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && searchPubChem()}
+                />
+                <button
+                  onClick={searchPubChem} disabled={pcBusy}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded disabled:opacity-50"
+                >
+                  {pcBusy ? '…' : 'Search'}
+                </button>
+              </div>
+
+              {pcErr && <p className="text-xs text-red-500">{pcErr}</p>}
+
+              {pcResult && (
+                <div className={`rounded-lg p-2.5 flex gap-3 ${
+                  isDark ? 'bg-gray-800' : 'bg-white border border-gray-200'
+                }`}>
+                  <img
+                    src={`${PC}/compound/cid/${pcResult.cid}/PNG?image_size=small`}
+                    alt={pcResult.name}
+                    className="w-20 h-20 object-contain rounded bg-white shrink-0"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className={`text-xs font-semibold truncate ${
+                      isDark ? 'text-gray-200' : 'text-gray-800'
+                    }`}>{pcResult.name}</p>
+                    <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {pcResult.formula} · {pcResult.mw} g/mol
+                    </p>
+                    <p className={`text-xs font-mono break-all leading-tight ${
+                      isDark ? 'text-green-400' : 'text-green-700'
+                    }`}>{pcResult.smiles}</p>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={copySMILES}
+                        className={`text-xs px-2 py-1 rounded font-medium ${
+                          copied
+                            ? 'bg-green-600 text-white'
+                            : isDark ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {copied ? '✓ Copied!' : 'Copy SMILES'}
+                      </button>
+                      <Link
+                        to="/database"
+                        className="text-xs px-2 py-1 rounded font-medium bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Download SDF/PDB ↗
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="space-y-4">
           <div>

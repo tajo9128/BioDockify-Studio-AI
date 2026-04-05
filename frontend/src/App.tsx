@@ -8,6 +8,7 @@ import { Viewer } from '@/pages/Viewer'
 import { AIAssistant } from '@/pages/AIAssistant'
 import { Settings } from '@/pages/Settings'
 import { MoleculeDynamics } from '@/pages/MoleculeDynamics'
+import { DatabaseDownload } from '@/pages/DatabaseDownload'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/results" element={<Results />} />
           <Route path="/viewer" element={<Viewer />} />
           <Route path="/ai" element={<AIAssistant />} />
+          <Route path="/database" element={<DatabaseDownload />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
