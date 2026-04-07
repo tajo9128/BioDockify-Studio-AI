@@ -38,6 +38,7 @@ RUN pip install --no-cache-dir \
     requests \
     pyyaml \
     rdkit-pypi==2022.9.5 \
+    vina>=1.2.5 \
     openbabel-wheel \
     oddt>=0.7 \
     scikit-learn \
