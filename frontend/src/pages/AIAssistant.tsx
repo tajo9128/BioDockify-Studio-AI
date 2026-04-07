@@ -61,7 +61,7 @@ export function AIAssistant() {
   }
   const fetchLLMSettings = async () => {
     try { const r = await fetch('/llm/settings'); if (r.ok) setLlmSettings(await r.json()) } catch (_) {}
-    try { const r2 = await fetch('/chat/status'); if (r2.ok) { const d = await r2.json(); setProviderStatus({ provider: d.provider || 'ollama', available: !!d.available }) } } catch (_) {}
+    try { const r2 = await fetch('/brain/chat/status'); if (r2.ok) { const d = await r2.json(); setProviderStatus({ provider: d.provider || 'ollama', available: !!(d.available ?? d.ollama_available) }) } } catch (_) {}
   }
 
   useEffect(() => { scrollToBottom() }, [messages])

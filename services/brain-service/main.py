@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 API_BACKEND_URL = os.getenv("API_BACKEND_URL", "http://api-backend:8000")
 BRAIN_SERVICE_URL = os.getenv("BRAIN_SERVICE_URL", "http://brain-service:8000")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
 STORAGE_DIR = Path("/app/storage")
 UPLOADS_DIR = Path("/app/uploads")
@@ -530,10 +531,12 @@ async def chat_status():
     available = False
     models = []
     
+    # Strip /v1 suffix so tags URL is correct: http://ollama:11434/api/tags
+    ollama_base = base_url.rstrip("/").removesuffix("/v1") if base_url else OLLAMA_URL
     try:
         if provider == "ollama":
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{base_url}/api/tags")
+                response = await client.get(f"{ollama_base}/api/tags")
                 if response.status_code == 200:
                     data = response.json()
                     models = [m.get("name", "") for m in data.get("models", [])]
@@ -564,6 +567,7 @@ async def chat_status():
 
     return {
         "provider": provider,
+        "available": available,
         "ollama_available": available,
         "models": [{"name": m} for m in models],
     }
