@@ -1600,8 +1600,14 @@ def smart_dock(
             else:
                 continue
 
+        # Ensure we have a valid receptor - never use ligand as receptor
+        receptor_to_use = conf_pdbqt or receptor_pdbqt
+        if not receptor_to_use:
+            logger.error("[SmartDock] No receptor available - cannot dock")
+            continue
+
         vina_result = run_vina_docking(
-            conf_pdbqt or receptor_pdbqt or ligand_pdbqt,
+            receptor_to_use,
             ligand_pdbqt,
             center_x,
             center_y,
@@ -1664,9 +1670,13 @@ def smart_dock(
             )
             pipeline["engine_used"] = "vina_then_gnina"
 
-            gnina_result = run_gnina_docking(
-                receptor_pdbqt or ligand_pdbqt,
-                ligand_pdbqt,
+            # Use the same receptor validation as Vina path
+            if not receptor_pdbqt:
+                logger.error("[SmartDock] No receptor for GNINA - skipping")
+            else:
+                gnina_result = run_gnina_docking(
+                    receptor_pdbqt,
+                    ligand_pdbqt,
                 center_x,
                 center_y,
                 center_z,
@@ -1676,68 +1686,68 @@ def smart_dock(
                 exhaustiveness,
                 min(num_modes, len(selected_for_gnina)),
                 output_dir,
-            )
-
-            if gnina_result["success"]:
-                # Merge Vina scores into GNINA results (GNINA log may not have all Vina poses)
-                gnina_results = gnina_result.get("results", [])
-                for g_res in gnina_results:
-                    # Find matching Vina result by mode number
-                    mode = g_res.get("mode", 0)
-                    for v_res in all_results:
-                        if v_res.get("mode") == mode:
-                            # Keep Vina score from actual Vina run, not GNINA's estimate
-                            g_res["vina_score"] = v_res["vina_score"]
-                            break
-
-                # Final ranking: sort by GNINA score (CNN), then by Vina as tiebreaker
-                gnina_results.sort(
-                    key=lambda x: (
-                        x.get("gnina_score") or 999,
-                        x.get("vina_score") or 999,
-                    )
                 )
-                pipeline["results"] = gnina_results[:num_modes]
-                pipeline["files"].update(gnina_result.get("files", {}))
 
-                if vina_result.get("files", {}).get("log"):
-                    pipeline["files"]["vina_log"] = vina_result["files"]["log"]
-                if vina_result.get("files", {}).get("docking"):
-                    pipeline["files"]["vina_docking"] = vina_result["files"]["docking"]
+                if gnina_result["success"]:
+                    # Merge Vina scores into GNINA results (GNINA log may not have all Vina poses)
+                    gnina_results = gnina_result.get("results", [])
+                    for g_res in gnina_results:
+                        # Find matching Vina result by mode number
+                        mode = g_res.get("mode", 0)
+                        for v_res in all_results:
+                            if v_res.get("mode") == mode:
+                                # Keep Vina score from actual Vina run, not GNINA's estimate
+                                g_res["vina_score"] = v_res["vina_score"]
+                                break
 
-                # Log final scores
-                logger.info(f"[SmartDock] Final ranking (GNINA score dominant):")
-                for r in pipeline["results"][:5]:
-                    logger.info(
-                        f"  Mode {r.get('mode')}: Vina={r.get('vina_score')}, "
-                        f"GNINA/CNN={r.get('gnina_score')}, RF={r.get('rf_score')}"
+                    # Final ranking: sort by GNINA score (CNN), then by Vina as tiebreaker
+                    gnina_results.sort(
+                        key=lambda x: (
+                            x.get("gnina_score") or 999,
+                            x.get("vina_score") or 999,
+                        )
                     )
+                    pipeline["results"] = gnina_results[:num_modes]
+                    pipeline["files"].update(gnina_result.get("files", {}))
 
-            pipeline["pipeline_stages"].append(
-                {
-                    "stage": "docking",
-                    "status": "completed",
-                    "details": f"Filtered {len(all_results)} → {len(selected_for_gnina)} poses → GNINA+RF ({mode})",
+                    if vina_result.get("files", {}).get("log"):
+                        pipeline["files"]["vina_log"] = vina_result["files"]["log"]
+                    if vina_result.get("files", {}).get("docking"):
+                        pipeline["files"]["vina_docking"] = vina_result["files"]["docking"]
+
+                    # Log final scores
+                    logger.info(f"[SmartDock] Final ranking (GNINA score dominant):")
+                    for r in pipeline["results"][:5]:
+                        logger.info(
+                            f"  Mode {r.get('mode')}: Vina={r.get('vina_score')}, "
+                            f"GNINA/CNN={r.get('gnina_score')}, RF={r.get('rf_score')}"
+                        )
+
+                pipeline["pipeline_stages"].append(
+                    {
+                        "stage": "docking",
+                        "status": "completed",
+                        "details": f"Filtered {len(all_results)} → {len(selected_for_gnina)} poses → GNINA+RF ({mode})",
+                    }
+                )
+
+                pipeline["download_urls"] = {
+                    "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+                    "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
+                    "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
+                    "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
+                    "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
+                    "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
+                    "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
                 }
-            )
-
-            pipeline["download_urls"] = {
-                "log_file": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "docking_file": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-                "grid_file": f"/download/{os.path.basename(pipeline['files'].get('grid', ''))}",
-                "vina_log": f"/download/{os.path.basename(pipeline['files'].get('vina_log', pipeline['files'].get('log', '')))}",
-                "vina_docking": f"/download/{os.path.basename(pipeline['files'].get('vina_docking', pipeline['files'].get('docking', '')))}",
-                "gnina_log": f"/download/{os.path.basename(pipeline['files'].get('log', ''))}",
-                "gnina_docking": f"/download/{os.path.basename(pipeline['files'].get('docking', ''))}",
-            }
-            if receptor_pdbqt:
-                pipeline["download_urls"]["receptor_file"] = (
-                    f"/download/{os.path.basename(receptor_pdbqt)}"
-                )
-            if ligand_pdbqt:
-                pipeline["download_urls"]["ligand_file"] = (
-                    f"/download/{os.path.basename(ligand_pdbqt)}"
-                )
+                if receptor_pdbqt:
+                    pipeline["download_urls"]["receptor_file"] = (
+                        f"/download/{os.path.basename(receptor_pdbqt)}"
+                    )
+                if ligand_pdbqt:
+                    pipeline["download_urls"]["ligand_file"] = (
+                        f"/download/{os.path.basename(ligand_pdbqt)}"
+                    )
         else:
             logger.warning("[SmartDock] No poses selected for GNINA")
             pipeline["routing_decision"] = (
