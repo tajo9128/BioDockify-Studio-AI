@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Link } from 'react-router-dom'
 
@@ -25,6 +25,8 @@ export function Docking() {
   const [error, setError] = useState('')
   const [jobs, setJobs] = useState<any[]>([])
   const [jobFiles, setJobFiles] = useState<Record<string, { filename: string; url: string | null; size_bytes?: number; exists: boolean }>>({})
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const cancelledRef = useRef(false)
 
   // Progress tracking state
   const [progress, setProgress] = useState(0)
@@ -62,7 +64,13 @@ export function Docking() {
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  useEffect(() => { fetchJobs() }, [])
+  useEffect(() => {
+    fetchJobs()
+    return () => {
+      cancelledRef.current = true
+      eventSourceRef.current?.close()
+    }
+  }, [])
 
   const fetchJobs = async () => {
     try {
@@ -122,11 +130,14 @@ export function Docking() {
       
       const jobId = accepted.job_id
       
+      cancelledRef.current = false
       // Connect to SSE stream for real-time progress
       const eventSource = new EventSource(`/dock/${jobId}/stream`)
+      eventSourceRef.current = eventSource
       
       await new Promise<void>((resolve, reject) => {
         eventSource.onmessage = (event) => {
+          if (cancelledRef.current) { eventSource.close(); resolve(); return }
           try {
             const data = JSON.parse(event.data)
             setProgress(data.progress)
@@ -147,6 +158,7 @@ export function Docking() {
         
         eventSource.onerror = () => {
           eventSource.close()
+          if (cancelledRef.current) { resolve(); return }
           // Fall back to polling if SSE fails
           pollUntilComplete(jobId).then(resolve).catch(reject)
         }
@@ -183,8 +195,20 @@ export function Docking() {
     setRunning(false)
   }
   
+  const cancelDocking = () => {
+    cancelledRef.current = true
+    eventSourceRef.current?.close()
+    eventSourceRef.current = null
+    setRunning(false)
+    setProgress(0)
+    setProgressMessage('')
+    setCurrentStep(0)
+    setError('Docking cancelled')
+  }
+
   const pollUntilComplete = async (jobId: string): Promise<void> => {
     for (let attempt = 0; attempt < 300; attempt++) {
+      if (cancelledRef.current) return
       await new Promise(r => setTimeout(r, 2000))
       const res = await fetch(`/dock/${jobId}/status`)
       const status = await res.json()
@@ -437,6 +461,15 @@ export function Docking() {
                   </div>
                 ))}
               </div>
+
+              <button
+                onClick={cancelDocking}
+                className={`mt-5 w-full py-2 text-sm rounded-lg border transition-colors ${
+                  isDark ? 'border-red-700 text-red-400 hover:bg-red-900/30' : 'border-red-300 text-red-500 hover:bg-red-50'
+                }`}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}

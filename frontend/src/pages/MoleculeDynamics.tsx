@@ -55,7 +55,7 @@ const FORCE_FIELDS = [
   { value: 'opls-aa', label: 'OPLS-AA' },
 ]
 
-function MiniPlot({ data, label, color }: { data: number[]; label: string; color: string }) {
+function MiniPlot({ data, label, color, isDark }: { data: number[]; label: string; color: string; isDark: boolean }) {
   if (!data.length) return null
   const w = 420, h = 120
   const min = Math.min(...data)
@@ -68,12 +68,12 @@ function MiniPlot({ data, label, color }: { data: number[]; label: string; color
   }).join(' ')
   return (
     <div className="mt-2">
-      <p className="text-xs font-medium mb-1">{label}</p>
+      <p className={`text-xs font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{label}</p>
       <svg width={w} height={h} className="w-full" viewBox={`0 0 ${w} ${h}`}>
         <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
         <line x1="0" y1={h - ((data[data.length - 1] - min) / range) * h} x2={w} y2={h - ((data[data.length - 1] - min) / range) * h} stroke={color} strokeWidth="0.5" strokeDasharray="4,2" opacity="0.5" />
       </svg>
-      <p className="text-xs text-gray-500">Final: {data[data.length - 1]?.toFixed(3)}</p>
+      <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Final: {data[data.length - 1]?.toFixed(3)}</p>
     </div>
   )
 }
@@ -187,8 +187,15 @@ export function MoleculeDynamics() {
         <div className="lg:col-span-1 space-y-4">
           <div className={cardClass}>
             <p className={`text-sm font-semibold mb-3 ${textClass}`}>1. Upload Structure</p>
-            <div className="drop-zone" onClick={() => document.getElementById('md-pdb-input')?.click()}>
-              <p className="text-sm text-gray-400">{pdbFile ? `✓ ${pdbFile.name}` : 'Drop PDB file or click to browse'}</p>
+            <div
+              onClick={() => document.getElementById('md-pdb-input')?.click()}
+              className={`flex items-center justify-center px-4 py-6 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
+                isDark
+                  ? 'border-gray-600 hover:border-blue-500 text-gray-400 hover:text-blue-400'
+                  : 'border-gray-300 hover:border-blue-400 text-gray-400 hover:text-blue-500'
+              }`}
+            >
+              <p className="text-sm">{pdbFile ? `✓ ${pdbFile.name}` : 'Drop PDB file or click to browse'}</p>
             </div>
             <input id="md-pdb-input" type="file" accept=".pdb" className="hidden" onChange={handleFileChange} />
           </div>
@@ -262,18 +269,21 @@ export function MoleculeDynamics() {
         {/* Jobs list + results */}
         <div className="lg:col-span-2 space-y-4">
           {/* Running job progress */}
-          {jobs.find(j => j.status === 'running') && (
-            <div className={`${cardClass} border-blue-500/50`}>
-              <div className="flex items-center justify-between mb-2">
-                <p className={`text-sm font-semibold text-blue-400`}>🔬 Running: {jobs.find(j => j.status === 'running')?.job_id}</p>
-                <span className="text-xs text-blue-400">{jobs.find(j => j.status === 'running')?.progress}%</span>
+          {jobs.find(j => j.status === 'running') && (() => {
+            const runJob = jobs.find(j => j.status === 'running')!
+            return (
+              <div className={`${cardClass} border-blue-500/50`}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className={`text-sm font-semibold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>🔬 Running: {runJob.job_id}</p>
+                  <span className={`text-xs ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{runJob.progress}%</span>
+                </div>
+                <div className={`w-full rounded-full h-2 mb-1 ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                  <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${runJob.progress}%` }} />
+                </div>
+                <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{runJob.message}</p>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-2 mb-1">
-                <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${jobs.find(j => j.status === 'running')?.progress}%` }} />
-              </div>
-              <p className="text-xs text-gray-400">{jobs.find(j => j.status === 'running')?.message}</p>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Results */}
           {selectedJob && r && (
@@ -284,10 +294,16 @@ export function MoleculeDynamics() {
                   <p className="text-xs text-gray-400">{r.engine} · {r.platform} · {r.sim_time_ns} ns</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded-full ${r.stability === 'stable' ? 'bg-green-900/50 text-green-400' : r.stability === 'borderline' ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    r.stability === 'stable'
+                      ? isDark ? 'bg-green-900/50 text-green-400' : 'bg-green-100 text-green-700'
+                      : r.stability === 'borderline'
+                      ? isDark ? 'bg-yellow-900/50 text-yellow-400' : 'bg-yellow-100 text-yellow-700'
+                      : isDark ? 'bg-red-900/50 text-red-400' : 'bg-red-100 text-red-700'
+                  }`}>
                     {r.stability}
                   </span>
-                  <button onClick={() => setSelectedJob(null)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
+                  <button onClick={() => setSelectedJob(null)} className={`text-xs ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>✕</button>
                 </div>
               </div>
 
@@ -312,17 +328,17 @@ export function MoleculeDynamics() {
                 </div>
               )}
 
-              <MiniPlot data={r.rmsd_angstrom || []} label="RMSD vs initial (Å)" color="#60a5fa" />
-              <MiniPlot data={(r.rmsd_angstrom || []).map((_, i, arr) => arr.slice(0, i + 1).reduce((s, v) => s + v, 0) / (i + 1))} label="Running avg energy (kJ/mol)" color="#34d399" />
+              <MiniPlot data={r.rmsd_angstrom || []} label="RMSD vs initial (Å)" color="#60a5fa" isDark={isDark} />
+              <MiniPlot data={(r.rmsd_angstrom || []).map((_, i, arr) => arr.slice(0, i + 1).reduce((s, v) => s + v, 0) / (i + 1))} label="Running avg RMSD (Å)" color="#34d399" isDark={isDark} />
 
               <div className="flex gap-2 mt-4">
                 {r.final_frame_path && (
-                  <a href={`/storage/${r.final_frame_path.split('/').pop()}`} download className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                  <a href={`/md/job/${selectedJob.job_id}/download?file=final_frame`} download className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
                     Download Final PDB
                   </a>
                 )}
                 {r.energy_csv_path && (
-                  <a href={`/storage/${r.energy_csv_path.split('/').pop()}`} download className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700">
+                  <a href={`/md/job/${selectedJob.job_id}/download?file=energy_csv`} download className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700">
                     Download Energy CSV
                   </a>
                 )}
@@ -346,17 +362,21 @@ export function MoleculeDynamics() {
                         {j.result && <span className="ml-2 text-xs text-gray-400">{j.result.sim_time_ns} ns · {j.result.stability}</span>}
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        j.status === 'completed' ? 'bg-green-900/50 text-green-400' :
-                        j.status === 'running' ? 'bg-blue-900/50 text-blue-400' :
-                        j.status === 'failed' ? 'bg-red-900/50 text-red-400' : 'bg-gray-700 text-gray-400'
+                        j.status === 'completed'
+                          ? isDark ? 'bg-green-900/50 text-green-400' : 'bg-green-100 text-green-700'
+                          : j.status === 'running'
+                          ? isDark ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-700'
+                          : j.status === 'failed'
+                          ? isDark ? 'bg-red-900/50 text-red-400' : 'bg-red-100 text-red-700'
+                          : isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-600'
                       }`}>{j.status}</span>
                     </div>
                     {j.status === 'running' && (
                       <div className="mt-1">
-                        <div className="w-full bg-gray-700 rounded-full h-1">
+                        <div className={`w-full rounded-full h-1 ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
                           <div className="bg-blue-500 h-1 rounded-full transition-all" style={{ width: `${j.progress}%` }} />
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5">{j.message}</p>
+                        <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{j.message}</p>
                       </div>
                     )}
                   </div>
