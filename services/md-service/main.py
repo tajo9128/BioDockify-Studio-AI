@@ -357,15 +357,29 @@ def _run_dynamics(job_id: str, request: DynamicsRequest):
 
         _update_progress(job_id, 65, f"Production MD: {request.steps} steps...")
         energies = []
-        frames = []
         total_frames = request.steps // request.frame_interval
+        
+        # Use DCD reporter to write frames to disk instead of storing in memory
+        traj_path = STORAGE_DIR / f"trajectory_{job_id}.dcd"
+        from openmm.app import DCDReporter
+        dcd_reporter = DCDReporter(str(traj_path), request.frame_interval)
+        
+        # Collect frames for final PDB writing
+        frames = []
 
         for i in range(0, request.steps, request.frame_interval):
             integrator.step(request.frame_interval)
             state = context.getState(getPositions=True, getEnergy=True)
-            frames.append(
-                state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
-            )
+            
+            # Write frame to DCD file
+            dcd_reporter.report(context, state)
+            
+            # Only store last few frames in memory for PDB output
+            if i >= request.steps - (request.frame_interval * 10):
+                frames.append(
+                    state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+                )
+            
             energies.append(
                 state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
             )

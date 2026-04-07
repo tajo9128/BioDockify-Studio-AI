@@ -94,10 +94,39 @@ class RMSDAnalyzer:
             return []
 
     def _compute_rmsd(self, positions1, positions2) -> float:
-        """Compute RMSD between two sets of positions"""
-        diff = positions1 - positions2
-        dist_sq = sum(d.x**2 + d.y**2 + d.z**2 for d in diff) / len(diff)
-        return float(np.sqrt(dist_sq))
+        """Compute RMSD with Kabsch optimal superposition"""
+        try:
+            import numpy as np
+            from openmm import unit
+
+            # Convert to numpy arrays
+            p1 = np.array([[p.x, p.y, p.z] for p in positions1])
+            p2 = np.array([[p.x, p.y, p.z] for p in positions2])
+
+            # Center both structures at origin
+            p1_centered = p1 - p1.mean(axis=0)
+            p2_centered = p2 - p2.mean(axis=0)
+
+            # Kabsch algorithm: find optimal rotation via SVD
+            H = p1_centered.T @ p2_centered
+            U, S, Vt = np.linalg.svd(H)
+
+            # Ensure right-handed coordinate system
+            d = np.sign(np.linalg.det(Vt.T @ U.T))
+            D = np.diag([1, 1, d])
+            R = Vt.T @ D @ U.T
+
+            # Apply rotation to p2
+            p2_rotated = p2_centered @ R.T
+
+            # Calculate RMSD after optimal alignment
+            diff = p1_centered - p2_rotated
+            rmsd = float(np.sqrt(np.mean(np.sum(diff**2, axis=1))))
+
+            return rmsd
+        except Exception as e:
+            logger.error(f"RMSD computation failed: {e}")
+            return 0.0
 
     def _make_plot(
         self, values: List[float], ylabel: str, title: str
@@ -450,16 +479,12 @@ class SASAAnalyzer:
                     system = app.System()
                     system.addForce(force)
                     
-                    context = app.Context(system, app.Integrator(0.001*unit.picosecond))
-                    context.setPositions(modeller.positions)
-                    
-                    # Note: Proper SASA requires external tools like FreeSASA or MDTraj
-                    # This is a simplified approximation based on atom count
+                    # WARNING: This is a rough approximation, not true SASA
+                    # Proper SASA requires FreeSASA, MDTraj, or similar tools
+                    # This approximation assumes ~1.5 nm² per 10 heavy atoms
                     n_atoms = len(frame_pos)
-                    # Approximate SASA: ~1.5 nm² per 10 atoms for typical proteins
                     sasa_nm2 = (n_atoms / 10.0) * 1.5
                     sasa_values.append(round(sasa_nm2, 4))
-                    del context
                     
                 except Exception as e:
                     logger.warning(f"SASA frame calculation failed: {e}")
