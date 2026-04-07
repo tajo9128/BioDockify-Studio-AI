@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .config import OLLAMA_URL, OLLAMA_MODEL, AI_MODE, ALLOW_AI, OLLAMA_TIMEOUT
+from .config import OLLAMA_URL, OLLAMA_URLS, OLLAMA_MODEL, AI_MODE, ALLOW_AI, OLLAMA_TIMEOUT
 from .offline_engine import OfflineAssistant
 
 logger = logging.getLogger(__name__)
@@ -336,26 +336,57 @@ PROVIDER_MODELS = {
 
 
 class OllamaProvider:
-    """Ollama API provider"""
+    """Ollama API provider with automatic URL fallback"""
 
     def __init__(self, url: str = OLLAMA_URL, model: str = OLLAMA_MODEL):
         self.url = url
         self.model = model
+        self._working_url = None
+
+    def _find_working_url(self) -> Optional[str]:
+        """Try all Ollama URLs and return the first working one"""
+        if self._working_url:
+            return self._working_url
+        
+        urls_to_try = OLLAMA_URLS if hasattr(self, 'url') and self.url in OLLAMA_URLS else [self.url] + OLLAMA_URLS
+        
+        for url in urls_to_try:
+            try:
+                response = requests.get(f"{url}/api/tags", timeout=2)
+                if response.status_code == 200:
+                    logger.info(f"Ollama found at {url}")
+                    self._working_url = url
+                    self.url = url
+                    return url
+            except Exception as e:
+                logger.debug(f"Ollama not available at {url}: {e}")
+                continue
+        
+        return None
 
     def is_available(self) -> bool:
         try:
-            response = requests.get(f"{self.url}/api/tags", timeout=3)
+            working_url = self._find_working_url()
+            if not working_url:
+                return False
+            
+            response = requests.get(f"{working_url}/api/tags", timeout=3)
             if response.status_code == 200:
                 data = response.json()
                 models = data.get("models", [])
-                logger.info(f"Ollama reachable, {len(models)} model(s) listed")
-                return True  # reachable = available; model list may be empty while loading
+                logger.info(f"Ollama reachable at {working_url}, {len(models)} model(s) listed")
+                return True
             return False
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Ollama availability check failed: {e}")
             return False
 
     def chat(self, messages: List[Dict]) -> str:
         """Send a pre-built messages list (system + history + user) to Ollama."""
+        working_url = self._find_working_url()
+        if not working_url:
+            raise ConnectionError("Ollama not available at any known URL")
+        
         headers = {"Content-Type": "application/json"}
         payload = {
             "model": self.model,
@@ -363,7 +394,7 @@ class OllamaProvider:
             "stream": False,
         }
         response = requests.post(
-            f"{self.url}/api/chat",
+            f"{working_url}/api/chat",
             json=payload,
             headers=headers,
             timeout=OLLAMA_TIMEOUT * 2,
@@ -374,7 +405,11 @@ class OllamaProvider:
 
     def get_models(self) -> list:
         try:
-            response = requests.get(f"{self.url}/api/tags", timeout=OLLAMA_TIMEOUT)
+            working_url = self._find_working_url()
+            if not working_url:
+                return []
+            
+            response = requests.get(f"{working_url}/api/tags", timeout=OLLAMA_TIMEOUT)
             if response.status_code == 200:
                 data = response.json()
                 return [m["name"] for m in data.get("models", [])]

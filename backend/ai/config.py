@@ -10,9 +10,19 @@ AI_MODE = os.getenv("AI_MODE", "auto")
 # ollama = force Ollama
 # offline = force offline fallback
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
-# Docker: http://ollama:11434 (use docker network)
-# Host: http://localhost:11434 or http://host.docker.internal:11434
+# Try multiple Ollama URLs in order of preference
+OLLAMA_URLS = [
+    os.getenv("OLLAMA_URL", ""),  # User-specified URL (if set)
+    "http://localhost:11434",      # Local host (most common)
+    "http://127.0.0.1:11434",      # Explicit localhost IP
+    "http://host.docker.internal:11434",  # Docker Desktop on Windows/Mac
+    "http://ollama:11434",         # Docker Compose service name
+]
+# Filter out empty strings
+OLLAMA_URLS = [url for url in OLLAMA_URLS if url]
+
+# Default URL for backwards compatibility
+OLLAMA_URL = OLLAMA_URLS[0] if OLLAMA_URLS else "http://localhost:11434"
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 

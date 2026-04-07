@@ -197,56 +197,66 @@ def health():
     except Exception as e:
         logger.debug(f"Vina check failed: {e}")
 
-    # Check Ollama with retry logic
+    # Check Ollama with URL fallback logic
     ollama_status = "unavailable"
     ollama_models = []
+    ollama_url_used = None
 
-    for attempt in range(3):
-        try:
-            import requests
-
-            ollama_url = os.environ.get(
-                "OLLAMA_URL", "http://host.docker.internal:11434"
-            )
-            response = requests.get(f"{ollama_url}/api/tags", timeout=3)
-            if response.status_code == 200:
-                data = response.json()
-                ollama_models = [m.get("name", "") for m in data.get("models", [])]
-                ollama_status = "available"
-                break
-        except Exception:
-            time.sleep(0.5)
+    try:
+        from ai.llm_router import OllamaProvider
+        
+        provider = OllamaProvider()
+        if provider.is_available():
+            ollama_status = "available"
+            ollama_url_used = provider._working_url or provider.url
+            ollama_models = provider.get_models()
+    except Exception as e:
+        logger.debug(f"Ollama check failed: {e}")
 
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "vina": {"status": vina_status, "type": vina_type},
-        "ollama": {"status": ollama_status, "models": ollama_models},
+        "ollama": {
+            "status": ollama_status,
+            "url": ollama_url_used,
+            "models": ollama_models
+        },
     }
 
 
 @app.get("/ollama/status")
 def ollama_status():
-    """Get detailed Ollama status with retry"""
-    ollama_url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
-
-    result = {"url": ollama_url, "available": False, "models": [], "error": None}
-
-    for attempt in range(3):
-        try:
-            import requests
-
-            response = requests.get(f"{ollama_url}/api/tags", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                result["available"] = True
-                result["models"] = data.get("models", [])
-                return result
-        except Exception as e:
-            result["error"] = str(e)
-            time.sleep(1)
-
-    return result
+    """Get detailed Ollama status with URL fallback"""
+    try:
+        from ai.llm_router import OllamaProvider
+        
+        provider = OllamaProvider()
+        working_url = provider._find_working_url()
+        
+        if not working_url:
+            return {
+                "url": None,
+                "available": False,
+                "models": [],
+                "error": "Ollama not found at any known URL. Please install Ollama from ollama.com or set OLLAMA_URL environment variable."
+            }
+        
+        models = provider.get_models()
+        return {
+            "url": working_url,
+            "available": True,
+            "models": models,
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"Ollama status check failed: {e}")
+        return {
+            "url": None,
+            "available": False,
+            "models": [],
+            "error": str(e)
+        }
 
 
 # ============================================
